@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="白月茧响">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>白月茧响 | White Moon Cocoon</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="boot" class="boot">
+  <div class="boot-inner">
+    <pre class="logo" id="bootLogo"></pre>
+    <div class="boot-text" id="bootText"></div>
+    <div class="boot-hint" id="bootHint"></div>
+  </div>
+</div>
+
+<div id="game" class="game hidden">
+  <div id="hud" class="hud">
+    <div class="hud-left">
+      <span class="hud-name" id="hudName"></span>
+      <span class="hud-sub" id="hudSub"></span>
+    </div>
+    <div class="hud-center">
+      <span class="hud-chapter" id="hudChapter"></span>
+    </div>
+    <div class="hud-right">
+      <span class="hud-time" id="hudTime"></span>
+      <button class="hud-btn" id="menuBtn">☰</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div id="battle" class="battle hidden">
+      <div class="battle-stage" id="battleStage">
+        <div class="arena" id="arena">
+          <div class="enemy-zone" id="enemyZone"></div>
+          <div class="player-zone" id="playerZone"></div>
+          <canvas id="fx" class="fx"></canvas>
+        </div>
+        <div class="battle-log" id="battleLog"></div>
+        <div class="battle-bars" id="battleBars"></div>
+        <div class="battle-menu" id="battleMenu"></div>
+      </div>
+    </div>
+
+    <div id="story" class="story hidden">
+      <div class="story-scroll" id="storyScroll">
+        <div id="storyText" class="story-text"></div>
+      </div>
+      <div id="choices" class="choices"></div>
+    </div>
+
+    <div id="side" class="side">
+      <div class="status" id="statusBox"></div>
+      <div class="savebar" id="savebar"></div>
+    </div>
+  </div>
+
+  <div id="inputbar" class="inputbar">
+    <span class="prompt">&gt;</span>
+    <input id="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="输入指令...">
+  </div>
+</div>
+
+<div id="dialog" class="dialog hidden">
+  <div class="dialog-box" id="dialogBox"></div>
+</div>
+
+<div id="panel" class="panel hidden">
+  <div class="panel-head">
+    <span>菜单</span>
+    <button class="panel-close" id="panelClose">✕</button>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+</div>
+
+<div id="end" class="end hidden">
+  <div class="end-inner">
+    <pre class="end-art" id="endArt"></pre>
+    <div class="end-title" id="endTitle"></div>
+    <div class="end-sub" id="endSub"></div>
+    <div class="end-stats" id="endStats"></div>
+    <div class="end-menu">
+      <button class="end-btn" id="endRestart">重新开始</button>
+      <button class="end-btn" id="endTitleBtn">回到标题</button>
+    </div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script src="story.js"></script>
+<script src="battle.js"></script>
+<script src="main.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+</script>
+</body>
+</html>

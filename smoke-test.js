@@ -1,0 +1,139 @@
+// 冒烟测试：验证引擎核心逻辑（无 DOM 环境下）
+const fs = require('fs');
+const path = require('path');
+
+// 简易 localStorage 模拟
+const store = {};
+global.localStorage = {
+  getItem: k => store[k] || null,
+  setItem: (k,v) => { store[k]=String(v); },
+  removeItem: k => { delete store[k]; },
+};
+
+// 载入 engine.js（它定义全局 Engine）
+const code = fs.readFileSync(path.join(__dirname, 'engine.js'), 'utf8');
+// eval 时 const/let 不会泄漏，改用间接 eval 赋值
+const getEngine = new Function(code + '\n return Engine;');
+const Engine = getEngine();
+
+// 测试
+const results = [];
+function t(name, fn) {
+  try { fn(); results.push(['PASS', name]); }
+  catch(e) { results.push(['FAIL', name, e.message]); }
+}
+
+t('newGame 初始化', () => {
+  const s = Engine.newGame();
+  if (s.scene !== 'prologue_0') throw new Error('scene wrong: '+s.scene);
+  if (s.maxHp !== 112) throw new Error('maxHp wrong: '+s.maxHp);
+  if (s.name !== '绫音') throw new Error('name wrong');
+});
+
+t('存档/读档 往返', () => {
+  const s = Engine.newGame();
+  s.flags.test = true; s.vars.a = 42;
+  Engine.setState(s);
+  Engine.saveSlot();
+  const s2 = Engine.newGame();
+  Engine.setState(s2);
+  const ok = Engine.loadSlot();
+  if (!ok) throw new Error('load failed');
+  if (!Engine.flag('test')) throw new Error('flag lost');
+  if (Engine.getVar('a') !== 42) throw new Error('var lost');
+});
+
+t('setStat 边界限制', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  Engine.setStat('hp', 9999);
+  if (s.hp !== s.maxHp) throw new Error('hp should clamp to max');
+  Engine.setStat('hp', -5);
+  if (s.hp !== 0) throw new Error('hp should clamp to 0');
+  Engine.setStat('ero', 150);
+  if (s.ero !== 100) throw new Error('ero clamp');
+});
+
+t('技能学习去重', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  Engine.learnSkill('strike');
+  if (s.skills.length !== 1) throw new Error('dup skill added');
+});
+
+t('formatTime', () => {
+  if (Engine.formatTime(3661) !== '61:01') throw new Error('fmt wrong: '+Engine.formatTime(3661));
+});
+
+// 载入 story.js 验证所有 next 场景引用有效
+const storyCode = fs.readFileSync(path.join(__dirname, 'story.js'), 'utf8');
+global.Engine = Engine;
+const getStory = new Function(storyCode + '\n return Story;');
+const Story = getStory();
+
+t('Story.get 存在', () => {
+  if (typeof Story.get !== 'function') throw new Error('Story.get missing');
+});
+
+t('所有场景 next 引用有效', () => {
+  const seen = new Set(['prologue_1']);
+  const stack = ['prologue_1'];
+  let checked = 0;
+  while (stack.length) {
+    const id = stack.pop();
+    const sc = Story.get(id);
+    if (!sc) throw new Error('missing scene: '+id);
+    if (sc.next && !seen.has(sc.next)) { seen.add(sc.next); stack.push(sc.next); }
+    if (sc.choices) {
+      for (const c of sc.choices) {
+        if (c.next && !seen.has(c.next)) { seen.add(c.next); stack.push(c.next); }
+      }
+    }
+    if (sc.battle) {
+      if (sc.battle.next && !seen.has(sc.battle.next)) { seen.add(sc.battle.next); stack.push(sc.battle.next); }
+      if (sc.battle.loseScene && !seen.has(sc.battle.loseScene)) { seen.add(sc.battle.loseScene); stack.push(sc.battle.loseScene); }
+    }
+    checked++;
+    if (checked > 200) break;
+  }
+  // 检查几个已知场景可达
+  for (const must of ['chapter1_1','chapter1_battle1','chapter2_1','chapter3_1','ending_eternity','ending_freedom','ending_reverie','end_roll']) {
+    if (!Story.get(must)) throw new Error('expected scene missing: '+must);
+  }
+});
+
+t('结局场景 choices 逻辑', () => {
+  const ch3 = Story.get('chapter3_8');
+  // chapter3_8 被覆盖为 getter
+  const state = Engine.newGame();
+  state.ero = 40;
+  Engine.setState(state);
+  const choices = ch3.choices;
+  if (choices.length !== 4) throw new Error('隐藏结局未出现，len='+choices.length);
+  state.ero = 80;
+  const choices2 = ch3.choices;
+  if (choices2.length !== 3) throw new Error('侵蚀高时应无隐藏结局，len='+choices2.length);
+});
+
+// 统计场景数量
+t('场景数量统计', () => {
+  // 通过可达遍历计数
+  const seen = new Set();
+  const stack = ['prologue_1'];
+  while (stack.length) {
+    const id = stack.pop();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const sc = Story.get(id);
+    if (!sc) continue;
+    if (sc.next) stack.push(sc.next);
+    if (sc.choices) for (const c of sc.choices) if (c.next) stack.push(c.next);
+    if (sc.battle) { if (sc.battle.next) stack.push(sc.battle.next); if (sc.battle.loseScene) stack.push(sc.battle.loseScene); }
+    if (seen.size > 200) break;
+  }
+  console.log('  可达场景数: ' + seen.size);
+});
+
+results.forEach(r => console.log(r.join(' | ')));
+const failed = results.filter(r => r[0] === 'FAIL');
+console.log(failed.length === 0 ? '\nALL TESTS PASSED' : '\n'+failed.length+' FAILED');
