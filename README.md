@@ -1,0 +1,2 @@
+# WhitemoonCocoon
+一个给我自己和朋友玩的网页RPG文字冒险游戏
