@@ -64,6 +64,10 @@ global.document = {
 
 global.Engine = new Function(fs.readFileSync(path.join(__dirname,'engine.js'),'utf8')+'\nreturn Engine;')();
 global.Story = new Function('Engine', fs.readFileSync(path.join(__dirname,'story.js'),'utf8')+'\nreturn Story;')(global.Engine);
+// enemies.js + story-data.js（触发 Story.loadData 注册全部场景）
+new Function(fs.readFileSync(path.join(__dirname,'enemies.js'),'utf8'))(global);
+global.App = {};
+new Function(fs.readFileSync(path.join(__dirname,'story-data.js'),'utf8'))();
 global.Battle = new Function('window','document', fs.readFileSync(path.join(__dirname,'battle.js'),'utf8')+'\nreturn Battle;')(global, global.document);
 global.App = new Function('window','document','Engine','Story','Battle', fs.readFileSync(path.join(__dirname,'main.js'),'utf8')+'\nreturn App;')(global, global.document, global.Engine, global.Story, global.Battle);
 

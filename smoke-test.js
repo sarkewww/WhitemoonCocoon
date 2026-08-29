@@ -65,11 +65,22 @@ t('formatTime', () => {
   if (Engine.formatTime(3661) !== '61:01') throw new Error('fmt wrong: '+Engine.formatTime(3661));
 });
 
-// 载入 story.js 验证所有 next 场景引用有效
+// 载入 story 链（story.js 壳 + enemies + story-data 批量注册）
 const storyCode = fs.readFileSync(path.join(__dirname, 'story.js'), 'utf8');
 global.Engine = Engine;
+global.window = global;
 const getStory = new Function(storyCode + '\n return Story;');
 const Story = getStory();
+global.Story = Story;
+
+// 载入 enemies.js（供 battle 数据）
+const enemiesCode = fs.readFileSync(path.join(__dirname, 'enemies.js'), 'utf8');
+new Function(enemiesCode)(global);
+
+// 载入 story-data.js（触发 Story.loadData 注册全部场景）
+global.App = {};
+const dataCode = fs.readFileSync(path.join(__dirname, 'story-data.js'), 'utf8');
+new Function(dataCode)();
 
 t('Story.get 存在', () => {
   if (typeof Story.get !== 'function') throw new Error('Story.get missing');
