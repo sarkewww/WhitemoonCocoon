@@ -116,6 +116,8 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .story-scroll::-webkit-scrollbar-track { background:var(--bg); }
 .story-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
 .story-scroll::-webkit-scrollbar-thumb:hover { background:var(--border-hi); }
+/* 选项出现时，让文本上移一点，避免被选项覆盖；选项点击后移除恢复 */
+.story-scroll.has-choices { padding-bottom:92px; }
 .story-text { max-width:720px; white-space:pre-wrap; word-wrap:break-word; }
 .story-text .line { margin-bottom:.25em; }
 .story-text .beat { margin-top:.9em; }

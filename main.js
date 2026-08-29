@@ -504,6 +504,8 @@ const App = (() => {
     choicesEl.innerHTML = '';
     choiceLock = false;
     if (scene.choices && scene.choices.length > 0) {
+      // 选项出现时，给文本底部让出空间（上移一点，避免被选项遮住）
+      storyScroll.classList.add('has-choices');
       for (const ch of scene.choices) {
         if (ch.condition && !ch.condition(S)) continue;
         const btn = document.createElement('button');
@@ -513,6 +515,7 @@ const App = (() => {
           if (choiceLock) return;
           choiceLock = false;
           choicesEl.innerHTML = '';
+          storyScroll.classList.remove('has-choices');
           if (ch.effect) ch.effect(S);
           if (ch.flag) S.flags[ch.flag] = true;
           if (ch.chapter !== undefined) S.chapter = ch.chapter;
@@ -533,13 +536,40 @@ const App = (() => {
       document.addEventListener('keydown', handler);
       setTimeout(() => document.removeEventListener('keydown', handler), 5000);
     } else if (scene.next) {
-      await wait(400);
+      // 点击 / 回车后才进入下一场景（不自动刷掉文字）
+      await waitForClick();
       choiceLock = false;
       Engine.autoSave();
       runScene(scene.next);
     } else {
       choiceLock = false;
     }
+  }
+
+  // ===== 等待一次点击 / 回车（用于场景推进，不自动切换） =====
+  function waitForClick() {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        document.removeEventListener('pointerdown', onPointer);
+        document.removeEventListener('keydown', onKey);
+        resolve();
+      };
+      const onPointer = (e) => {
+        if (e.target && storyScroll && !storyScroll.contains(e.target)) return;
+        e.preventDefault();
+        finish();
+      };
+      const onKey = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); finish(); }
+      };
+      document.addEventListener('pointerdown', onPointer);
+      document.addEventListener('keydown', onKey);
+      // 兜底：60 秒无操作也推进，避免永远卡住
+      setTimeout(finish, 60000);
+    });
   }
 
   function parseMarkup(str) {
@@ -854,7 +884,7 @@ const App = (() => {
   function wait(ms) { return new Promise(r=>setTimeout(r,ms)); }
 
   // ===== 打字机效果（视觉小说式逐字显示） =====
-  let typeSpeed = 600; // 每字 ms，0=立即显示（测试用）
+  let typeSpeed = 50; // 每字 ms，0=立即显示（测试用）
   function setTypeSpeed(ms) { typeSpeed = ms; }
 
   function typeLine(el, raw) {
