@@ -156,7 +156,7 @@ label chapter3_2
     [n]——但体内的纹路，正在一寸一寸地，替她回答。[/n]
   choices:
     1. 继续前进——深入异界 -> chapter3_3
-    2. 先去找羽衣——她不该独自面对这里 -> ch3_side1 [flag=hagoromo_joined]
+    2. 先去找羽衣——她不该独自面对这里 -> ch3_side1 [flag=hagoromo_joined] [cond: !Engine.flag("hagoromo_joined")]
      3. 在异界边缘稍作休整，整理思绪 -> d3_dream_realm
 
 label d3_dream_realm

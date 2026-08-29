@@ -98,7 +98,7 @@ label m3_white_2b
 
 label m3_white_3
   transition
-  onEnter: (s) => { s.ero = 0; }
+  onEnter: (s) => { s.ero = Engine.clamp(s.ero - 10, 0, 100); }
   text:
     [n]空气变了。[/n]
     [n]从茧壁深处传来一种湿黏的、有节奏的震颤——像心跳，但频率不对，像有什么东西在拙劣地模仿生命。[/n]
@@ -125,7 +125,7 @@ label m3_white_3
 
 label m3_white_battle
   transition
-  onEnter: (s) => { s.ero = 1; }
+  onEnter: (s) => { s.ero = Engine.clamp(s.ero - 3, 0, 100); }
   text:
     [r18g]战斗开始的第一秒，羽衣的左臂就被撕开了一道口子。血溅在茧壁上，沿着半透明的表面缓缓流下，像墨水滴进水里。[/r18g]
     [n]但羽衣没有停。她甚至没有发出痛呼，只是闷哼了一声。[/n]

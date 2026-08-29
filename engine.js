@@ -51,22 +51,25 @@ const Engine = (() => {
       doneScenes: {},      // 已执行过 onEnter 的场景
       log: [],
     };
-    // 初始属性计算（此时 state 未挂载，直接算一次）
-    s.maxHp = 100 + (s.stats.vit)*12;
-    s.maxSp = 50 + (s.stats.spi)*8;
-    s.atk = 12 + (s.stats.str)*4;
-    s.def = 6 + (s.stats.vit)*2;
-    s.spd = 10 + (s.stats.agi)*2;
-    // 难度加成
+    // 初始属性计算（此时 state 未挂载，直接算一次；难度倍率在 recalcStats 统一处理）
+    const baseStats = {
+      maxHp: 100 + (s.stats.vit)*12,
+      maxSp: 50 + (s.stats.spi)*8,
+      atk: 12 + (s.stats.str)*4,
+      def: 6 + (s.stats.vit)*2,
+      spd: 10 + (s.stats.agi)*2,
+    };
     if (difficulty === 'easy') {
-      s.maxHp = Math.round(s.maxHp * 1.3); s.hp = s.maxHp;
-      s.atk = Math.round(s.atk * 1.2);
+      baseStats.maxHp = Math.round(baseStats.maxHp * 1.3);
+      baseStats.atk = Math.round(baseStats.atk * 1.2);
     } else if (difficulty === 'hard') {
-      s.maxHp = Math.round(s.maxHp * 0.75);
-      s.hp = s.maxHp;
-      s.atk = Math.round(s.atk * 0.85);
-      s.def = Math.round(s.def * 0.85);
+      baseStats.maxHp = Math.round(baseStats.maxHp * 0.75);
+      baseStats.atk = Math.round(baseStats.atk * 0.85);
+      baseStats.def = Math.round(baseStats.def * 0.85);
     }
+    s.maxHp = baseStats.maxHp; s.hp = baseStats.maxHp;
+    s.maxSp = baseStats.maxSp; s.sp = baseStats.maxSp;
+    s.atk = baseStats.atk; s.def = baseStats.def; s.spd = baseStats.spd;
     return s;
   }
 
@@ -252,11 +255,28 @@ const Engine = (() => {
   function recalcStats(st) {
     st = st || getState();
     const s = st.stats;
-    st.maxHp = 100 + (s.vit||0)*12 + (st.level-1)*8;
-    st.maxSp = 50 + (s.spi||0)*8 + (st.level-1)*4;
-    st.atk = 12 + (s.str||0)*4 + (st.weaponLevel-1)*3 + (st.level-1)*2;
-    st.def = 6 + (s.vit||0)*2 + (st.level-1);
-    st.spd = 10 + (s.agi||0)*2 + (st.level-1);
+    const base = {
+      maxHp: 100 + (s.vit||0)*12 + (st.level-1)*8,
+      maxSp: 50 + (s.spi||0)*8 + (st.level-1)*4,
+      atk: 12 + (s.str||0)*4 + (st.weaponLevel-1)*3 + (st.level-1)*2,
+      def: 6 + (s.vit||0)*2 + (st.level-1),
+      spd: 10 + (s.agi||0)*2 + (st.level-1),
+    };
+    // 难度倍率统一在这里应用，避免 recalcStats 抹掉难度效果
+    const d = st.difficulty || 'normal';
+    if (d === 'easy') {
+      base.maxHp = Math.round(base.maxHp * 1.3);
+      base.atk = Math.round(base.atk * 1.2);
+    } else if (d === 'hard') {
+      base.maxHp = Math.round(base.maxHp * 0.75);
+      base.atk = Math.round(base.atk * 0.85);
+      base.def = Math.round(base.def * 0.85);
+    }
+    st.maxHp = base.maxHp;
+    st.maxSp = base.maxSp;
+    st.atk = base.atk;
+    st.def = base.def;
+    st.spd = base.spd;
     if (st.hp > st.maxHp) st.hp = st.maxHp;
     if (st.sp > st.maxSp) st.sp = st.maxSp;
   }

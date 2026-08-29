@@ -1,3 +1,73 @@
+===== ch0-interlude.story =====
+  ch0_inter_1 → ch0_inter_2
+  ch0_inter_2 → ch0_inter_3
+  ch0_inter_3 → ch0_inter_4
+  ch0_inter_4 → chapter1_1
+===== ch1-afterglow.story =====
+  ch1_aft_1 → ch1_aft_2
+  ch1_aft_2 → ch1_aft_3
+  ch1_aft_3 → ch1_aft_4
+  ch1_aft_4 → chapter2_1
+===== ch1-m1.story =====
+  m1_girl_missing [选:m1_girl_oldbuilding]
+  m1_girl_oldbuilding → m1_girl_choice
+  m1_girl_choice [选:m1_girl_save | m1_girl_guide]
+  m1_girl_save → m1_girl_battle
+  m1_girl_guide → m1_girl_battle
+  m1_girl_battle [战斗:patrol_ghost 胜→m1_girl_after 败→ch1_m1_death]
+  m1_girl_after → d1_night_menu
+  ch1_m1_death → m1_girl_battle
+===== ch2-gate.story =====
+  ch2_gate_1 → ch2_gate_2
+  ch2_gate_2 → ch2_gate_3
+  ch2_gate_3 → ch2_gate_4
+  ch2_gate_4 [选:m3_red_1 | m3_white_1 | m3_blue_1 | m3_lone_1]
+===== ch2-m2.story =====
+  m2_self_harm → m2_snow_finds
+  m2_snow_finds → m2_suzu_speak
+  m2_suzu_speak → m2_after
+  m2_after [选:m2_snow_safe | m2_suzu_promise]
+  m2_snow_safe → d2_night_menu
+  m2_suzu_promise → d2_night_menu
+===== ch3-blue.story =====
+  m3_blue_1 → m3_blue_2
+  m3_blue_2 → m3_blue_2b
+  m3_blue_2b → m3_blue_3
+  m3_blue_3 [战斗:blue_yuki_yandere 胜→m3_blue_after 败→chapter3_death]
+  m3_blue_battle → m3_blue_after
+  m3_blue_after → chapter3_1
+===== ch3-countdown.story =====
+  ch3_count_1 → ch3_count_2
+  ch3_count_2 → ch3_count_3
+  ch3_count_3 → m3_pain_harvest
+===== ch3-echo.story =====
+  ch3_echo_1 → ch3_echo_2
+  ch3_echo_2 → ch3_echo_3
+  ch3_echo_3 → ch3_echo_4
+  ch3_echo_4 → chapter3_battle
+===== ch3-harvest.story =====
+  m3_pain_harvest → chapter3_8
+===== ch3-lone.story =====
+  m3_lone_1 → m3_lone_2
+  m3_lone_2 → m3_lone_2b
+  m3_lone_2b → m3_lone_3
+  m3_lone_3 [选:m3_lone_battle]
+  m3_lone_battle [战斗:lone_source_director 胜→m3_lone_after 败→chapter3_death]
+  m3_lone_after → chapter3_1
+===== ch3-red.story =====
+  m3_red_1 → m3_red_2
+  m3_red_2 → m3_red_2b
+  m3_red_2b → m3_red_3
+  m3_red_3 [选:m3_red_battle]
+  m3_red_battle [战斗:red_suzu_berserk 胜→m3_red_after 败→chapter3_death]
+  m3_red_after → chapter3_1
+===== ch3-white.story =====
+  m3_white_1 → m3_white_2
+  m3_white_2 → m3_white_2b
+  m3_white_2b → m3_white_3
+  m3_white_3 [战斗:white_hagoromo_guard 胜→m3_white_after 败→chapter3_death]
+  m3_white_battle → m3_white_after
+  m3_white_after → chapter3_1
 ===== chapter1.story =====
   chapter1_1 [选:chapter1_2 | chapter1_2a]
   chapter1_2a → chapter1_3
@@ -6,7 +76,7 @@
   ch1_side1 [选:chapter1_3b | chapter1_4a]
   chapter1_3b → chapter1_3c
   chapter1_3c [选:chapter1_4 | ch1_side2]
-  ch1_side2 → chapter1_4
+  ch1_side2 [选:chapter1_4 | chapter1_4]
   chapter1_4a → chapter1_4
   chapter1_4 [选:chapter1_5 | chapter1_5]
   chapter1_5 → chapter1_6
@@ -16,28 +86,38 @@
   chapter1_7 [选:chapter1_8 | chapter1_8]
   chapter1_8 [选:chapter1_8b | chapter1_9]
   chapter1_8b → ch1_side3
-  ch1_side3 → chapter1_9
+  ch1_side3 [选:chapter1_9 | chapter1_9]
   chapter1_9 [选:chapter1_9a]
-  chapter1_9a [选:ch1_side4 | chapter1_10]
-  ch1_side4 → chapter1_10
+  chapter1_9a [选:ch1_side4 | d1_night_menu]
+  ch1_side4 → d1_night_menu
+  d1_night_menu [选:d1_snow_roof | d1_suzu_patrol | d1_hagoromo_library | m1_girl_missing | chapter1_10]
+  d1_snow_roof [选:d1_night_menu | d1_night_menu]
+  d1_suzu_patrol [战斗:patrol_ghost 胜→d1_suzu_patrol_after]
+  d1_suzu_patrol_after [选:d1_night_menu | d1_night_menu]
+  d1_hagoromo_library [选:d1_night_menu | d1_night_menu]
   chapter1_10 [选:chapter1_11 | chapter1_11 | ch1_side5]
-  ch1_side5 → ch1_side7
+  ch1_side5 [选:ch1_side7 | ch1_side7]
   ch1_side7 → chapter1_11
   chapter1_11 [选:chapter1_battle2 | ch1_side6]
-  ch1_side6 → chapter1_battle2
+  ch1_side6 [选:chapter1_battle2 | chapter1_battle2]
   chapter1_battle2 [战斗:mother1 胜→chapter1_12 败→chapter1_death]
   chapter1_death → chapter1_battle2
-  chapter1_12 [选:chapter2_1]
+  chapter1_12 [选:ch1_aft_1]
 ===== chapter2.story =====
   chapter2_1 [选:chapter2_2 | chapter2_2]
   chapter2_2 [选:chapter2_3 | chapter2_3a]
   chapter2_3a → chapter2_3
   chapter2_3 → chapter2_3b
   chapter2_3b [选:chapter2_3c | chapter2_3c] {flag:snow_rejected],snow_accepted]}
-  chapter2_3c → ch2_side1
+  chapter2_3c → d2_night_menu
+  d2_night_menu [选:d2_snow_obsess | d2_suzu_worsen | d2_prof_research | m2_self_harm | ch2_side1]
+  d2_snow_obsess [选:d2_night_menu | d2_night_menu]
+  d2_suzu_worsen [选:d2_night_menu | d2_night_menu]
+  d2_prof_research [选:d2_night_menu | d2_night_menu]
   ch2_side1 → ch2_side2
   ch2_side2 → ch2_side3
-  ch2_side3 → chapter2_4
+  ch2_side3 → ch2_side_wound
+  ch2_side_wound [选:chapter2_4 | chapter2_4]
   chapter2_4 [选:chapter2_5 | chapter2_5]
   chapter2_5 → ch2_side4
   ch2_side4 → ch2_side5
@@ -52,17 +132,23 @@
   chapter2_end [选:chapter3_1]
 ===== chapter3.story =====
   chapter3_1 → chapter3_2
-  chapter3_2 [选:chapter3_3 | ch3_side1] {flag:hagoromo_joined]}
+  chapter3_2 [选:chapter3_3 | ch3_side1 | d3_dream_realm] {flag:hagoromo_joined]}
+  d3_dream_realm [选:d3_dream_realm_trust12 | d3_dream_realm_trust6]
+  d3_dream_realm_trust12 → chapter3_3
+  d3_dream_realm_trust6 → chapter3_3
   ch3_side1 → ch3_side2
   ch3_side2 → chapter3_3
   chapter3_3 → chapter3_4
   chapter3_4 [战斗:guard1 胜→chapter3_5 败→chapter3_death]
   chapter3_death → chapter3_4
-  chapter3_5 → chapter3_6
+  chapter3_5 [选:chapter3_6 | d3_suzu_memory]
+  d3_suzu_memory [选:d3_suzu_memory_save | d3_suzu_memory_release]
+  d3_suzu_memory_save → chapter3_6
+  d3_suzu_memory_release → chapter3_6
   chapter3_6 [选:chapter3_7 | chapter3_7 | ch3_side3]
   ch3_side3 → chapter3_7
-  chapter3_7 [选:chapter3_battle | chapter3_battle | chapter3_battle] {flag:choice_destroy],choice_become_core],choice_hesitate]}
-  chapter3_battle [战斗:source_defense 胜→chapter3_8 败→chapter3_battle_death]
+  chapter3_7 [选:ch3_echo_1 | ch3_echo_1 | ch3_echo_1] {flag:choice_destroy],choice_become_core],choice_hesitate]}
+  chapter3_battle [战斗:source_defense 胜→ch3_count_1 败→chapter3_battle_death]
   chapter3_battle_death → chapter3_battle
   chapter3_8 → chapter3_9
   chapter3_9 [选:ending_eternity | ending_freedom | ending_reverie] {flag:ending_eternity],ending_freedom],ending_reverie]}
@@ -83,9 +169,11 @@
   prologue_2 [选:prologue_3 | prologue_3a]
   prologue_3a → prologue_3
   prologue_3 [选:prologue_4a | prologue_4b]
-  prologue_4a → prologue_5
-  prologue_4b → prologue_5
+  prologue_4a → dp_1_school
+  prologue_4b → dp_1_school
+  dp_1_school [选:dp_2_oldbuilding | dp_2_oldbuilding]
+  dp_2_oldbuilding [选:prologue_5 | prologue_5]
   prologue_5 [选:prologue_6]
   prologue_6 [选:prologue_7]
-  prologue_7 [选:chapter1_1]
+  prologue_7 [选:ch0_inter_1]
   end_roll

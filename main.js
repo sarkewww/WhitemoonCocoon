@@ -129,13 +129,14 @@ const App = (() => {
     await wait(600);
     bootHint.textContent = '按 Enter 或 点击 开始';
 
-    const handler = () => {
+    const handler = (e) => {
+      if (e.type === 'keydown' && e.key !== 'Enter') return;
       bootHint.textContent = '';
       document.removeEventListener('keydown', handler);
       bootEl.removeEventListener('click', handler);
       showTitle();
     };
-    document.addEventListener('keydown', (e) => { if (e.key==='Enter') handler(); });
+    document.addEventListener('keydown', handler);
     bootEl.addEventListener('click', handler);
   }
 
@@ -506,6 +507,15 @@ const App = (() => {
     if (scene.choices && scene.choices.length > 0) {
       // 选项出现时，给文本底部让出空间（上移一点，避免被选项遮住）
       storyScroll.classList.add('has-choices');
+      // 键盘快捷键（点击任意选项后移除，避免残留到下一场景）
+      const handler = (e) => {
+        const n = parseInt(e.key);
+        if (n >= 1 && n <= 9) {
+          const btns = choicesEl.querySelectorAll('.choice-btn');
+          if (btns[n-1]) { document.removeEventListener('keydown', handler); btns[n-1].click(); }
+        }
+      };
+      document.addEventListener('keydown', handler);
       for (const ch of scene.choices) {
         if (ch.condition && !ch.condition(S)) continue;
         const btn = document.createElement('button');
@@ -514,6 +524,7 @@ const App = (() => {
         btn.addEventListener('click', () => {
           if (choiceLock) return;
           choiceLock = false;
+          document.removeEventListener('keydown', handler);
           choicesEl.innerHTML = '';
           storyScroll.classList.remove('has-choices');
           if (ch.effect) ch.effect(S);
@@ -525,15 +536,6 @@ const App = (() => {
         });
         choicesEl.appendChild(btn);
       }
-      // 键盘快捷键
-      const handler = (e) => {
-        const n = parseInt(e.key);
-        if (n >= 1 && n <= 9) {
-          const btns = choicesEl.querySelectorAll('.choice-btn');
-          if (btns[n-1]) { btns[n-1].click(); document.removeEventListener('keydown', handler); }
-        }
-      };
-      document.addEventListener('keydown', handler);
       setTimeout(() => document.removeEventListener('keydown', handler), 5000);
     } else if (scene.next) {
       // 点击 / 回车后才进入下一场景（不自动刷掉文字）
@@ -550,9 +552,11 @@ const App = (() => {
   function waitForClick() {
     return new Promise((resolve) => {
       let done = false;
+      let timeout = null;
       const finish = () => {
         if (done) return;
         done = true;
+        if (timeout) clearTimeout(timeout);
         document.removeEventListener('pointerdown', onPointer);
         document.removeEventListener('keydown', onKey);
         resolve();
@@ -568,7 +572,7 @@ const App = (() => {
       document.addEventListener('pointerdown', onPointer);
       document.addEventListener('keydown', onKey);
       // 兜底：60 秒无操作也推进，避免永远卡住
-      setTimeout(finish, 60000);
+      timeout = setTimeout(finish, 60000);
     });
   }
 
