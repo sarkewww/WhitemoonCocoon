@@ -188,11 +188,11 @@ const App = (() => {
     };
     const onKey = (e) => {
       const n = parseInt(e.key);
-      if (n >= 1 && n <= 4) { cleanup(); doChoice(n - 1); }
+      if (n >= 1 && n <= 4) { doChoice(n - 1); }
     };
     const onClick = (e) => {
       const btn = e.target.closest ? e.target.closest('.title-btn') : null;
-      if (btn) { cleanup(); doChoice(parseInt(btn.dataset.i)); }
+      if (btn) { doChoice(parseInt(btn.dataset.i)); }
     };
     document.addEventListener('keydown', onKey);
     bootHint.addEventListener('click', onClick);

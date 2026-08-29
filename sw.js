@@ -1,5 +1,5 @@
 /* 白月茧响 - Service Worker（离线缓存） */
-const CACHE_NAME = 'wmc-v1';
+const CACHE_NAME = 'wmc-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -35,6 +35,27 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== location.origin) return;
   if (e.request.method !== 'GET') return;
 
+  // 静态资源（脚本/数据/样式/页面）网络优先：保证刷新拿到最新版
+  // 其余（图标等）缓存优先
+  const isStatic = /\.(js|css|html|webmanifest|json)$/.test(url.pathname) || e.request.mode === 'navigate';
+
+  if (isStatic) {
+    e.respondWith(
+      fetch(e.request).then((res) => {
+        if (res && res.status === 200 && res.type === 'basic') {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        }
+        return res;
+      }).catch(() => {
+        return caches.match(e.request).then((hit) => hit ||
+          (e.request.mode === 'navigate' ? caches.match('./index.html') : new Response('', { status: 408, statusText: 'offline' }))
+        );
+      })
+    );
+    return;
+  }
+
   e.respondWith(
     caches.match(e.request).then((hit) => {
       if (hit) return hit;
@@ -46,7 +67,6 @@ self.addEventListener('fetch', (e) => {
         return res;
       });
     }).catch(() => {
-      // 离线且未缓存：退回首页（保留存档于 localStorage）
       if (e.request.mode === 'navigate') return caches.match('./index.html');
       return new Response('', { status: 408, statusText: 'offline' });
     })
