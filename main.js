@@ -564,6 +564,7 @@ const App = (() => {
       .replace(/\[sb\]/g, '<span class="speaker speaker-b">')
       .replace(/\[sc\]/g, '<span class="speaker speaker-c">')
       .replace(/\[sd\]/g, '<span class="speaker speaker-d">')
+      .replace(/\[se\]/g, '<span class="speaker speaker-e">')
       .replace(/\[cg\]/g, '<div class="cg">')
       .replace(/\[\/cg\]/g, '</div>')
       .replace(/\[r18g\]/g, '<div class="r18g">')
@@ -819,6 +820,9 @@ const App = (() => {
       '解放': { art: [{c:'var(--green)', s:'═ 茧の解放 ╌'}], title:'茧の解放', sub:'契约被斩断，自由回归。但代价是被遗忘。', stats:{} },
       '残响': { art: [{c:'var(--red-hi)', s:'╳ 残响 ╳'}], title:'残响', sub:'以生命为代价，净化了城市。白花在废墟中绽放。', stats:{} },
       '白月': { art: [{c:'var(--accent-hi)', s:'  ☽ 白月 ☾'}], title:'白月', sub:'她接纳了新的自我，与茧共生。月光下，崭新的微笑。', stats:{} },
+      '羽衣': { art: [{c:'var(--cyan-hi)', s:'  ╰☆ 羽衣 ☆╯'}], title:'羽衣', sub:'他回到了原来的身体，但另一个她永远留在了茧中。有人转身离去，没有回头。', stats:{} },
+      '雪': { art: [{c:'var(--red-hi)', s:'  ❄ 雪 ❄'}], title:'雪', sub:'她永远做了绫音，被雪的爱囚禁在完美的牢笼中。镜中的微笑，不知为谁而笑。', stats:{} },
+      'TRUE': { art: [{c:'var(--gold)', s:'  ☀ 白月新生 ☀'}], title:'白月 · 新生', sub:'凌与绫音和解，三人找到新的平衡。樱花树下，阳光正好。', stats:{} },
     };
     const e = endings[ending] || { art:[], title:'???', sub:'', stats:{} };
 
@@ -969,6 +973,8 @@ const App = (() => {
     setCombo, setEnemySprite, updateEnemyBar, renderBattleBars, updateBattleState, dieAndRetry,
     showDialog, hideDialog, showEnding, wait, updateHUD, renderStatus, updateSidePanel, setTypeSpeed };
 })();
+
+if (typeof window !== 'undefined') window.App = App;
 
 // ---- 启动 ----
 document.addEventListener('DOMContentLoaded', () => App.init());

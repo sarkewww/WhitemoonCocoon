@@ -1,0 +1,91 @@
+===== chapter1.story =====
+  chapter1_1 [选:chapter1_2 | chapter1_2a]
+  chapter1_2a → chapter1_3
+  chapter1_2 → chapter1_3
+  chapter1_3 → ch1_side1
+  ch1_side1 [选:chapter1_3b | chapter1_4a]
+  chapter1_3b → chapter1_3c
+  chapter1_3c [选:chapter1_4 | ch1_side2]
+  ch1_side2 → chapter1_4
+  chapter1_4a → chapter1_4
+  chapter1_4 [选:chapter1_5 | chapter1_5]
+  chapter1_5 → chapter1_6
+  chapter1_6 [选:chapter1_battle1 | ch1_side3_battle]
+  chapter1_battle1 [战斗:spider1 胜→chapter1_7]
+  ch1_side3_battle [战斗:night_crawler 胜→chapter1_7]
+  chapter1_7 [选:chapter1_8 | chapter1_8]
+  chapter1_8 [选:chapter1_8b | chapter1_9]
+  chapter1_8b → ch1_side3
+  ch1_side3 → chapter1_9
+  chapter1_9 [选:chapter1_9a]
+  chapter1_9a [选:ch1_side4 | chapter1_10]
+  ch1_side4 → chapter1_10
+  chapter1_10 [选:chapter1_11 | chapter1_11 | ch1_side5]
+  ch1_side5 → ch1_side7
+  ch1_side7 → chapter1_11
+  chapter1_11 [选:chapter1_battle2 | ch1_side6]
+  ch1_side6 → chapter1_battle2
+  chapter1_battle2 [战斗:mother1 胜→chapter1_12 败→chapter1_death]
+  chapter1_death → chapter1_battle2
+  chapter1_12 [选:chapter2_1]
+===== chapter2.story =====
+  chapter2_1 [选:chapter2_2 | chapter2_2]
+  chapter2_2 [选:chapter2_3 | chapter2_3a]
+  chapter2_3a → chapter2_3
+  chapter2_3 → chapter2_3b
+  chapter2_3b [选:chapter2_3c | chapter2_3c] {flag:snow_rejected],snow_accepted]}
+  chapter2_3c → ch2_side1
+  ch2_side1 → ch2_side2
+  ch2_side2 → ch2_side3
+  ch2_side3 → chapter2_4
+  chapter2_4 [选:chapter2_5 | chapter2_5]
+  chapter2_5 → ch2_side4
+  ch2_side4 → ch2_side5
+  ch2_side5 → chapter2_6
+  chapter2_6 [选:chapter2_7 | chapter2_7]
+  chapter2_7 [选:ch2_side6 | ch2_side6] {flag:blackmailed]}
+  ch2_side6 [战斗:guard1 胜→chapter2_8 败→ch2_side6_death]
+  ch2_side6_death → ch2_side6
+  chapter2_8 [选:chapter2_battle]
+  chapter2_battle [战斗:saya_burst 胜→chapter2_end 败→chapter2_death]
+  chapter2_death → chapter2_battle
+  chapter2_end [选:chapter3_1]
+===== chapter3.story =====
+  chapter3_1 → chapter3_2
+  chapter3_2 [选:chapter3_3 | ch3_side1] {flag:hagoromo_joined]}
+  ch3_side1 → ch3_side2
+  ch3_side2 → chapter3_3
+  chapter3_3 → chapter3_4
+  chapter3_4 [战斗:guard1 胜→chapter3_5 败→chapter3_death]
+  chapter3_death → chapter3_4
+  chapter3_5 → chapter3_6
+  chapter3_6 [选:chapter3_7 | chapter3_7 | ch3_side3]
+  ch3_side3 → chapter3_7
+  chapter3_7 [选:chapter3_battle | chapter3_battle | chapter3_battle] {flag:choice_destroy],choice_become_core],choice_hesitate]}
+  chapter3_battle [战斗:source_defense 胜→chapter3_8 败→chapter3_battle_death]
+  chapter3_battle_death → chapter3_battle
+  chapter3_8 → chapter3_9
+  chapter3_9 [选:ending_eternity | ending_freedom | ending_reverie] {flag:ending_eternity],ending_freedom],ending_reverie]}
+===== endings.story =====
+  ending_eternity → end_roll
+  ending_freedom → end_roll
+  ending_reverie → end_roll
+  ending_white_moon → end_roll
+  ending_feather → end_roll
+  ending_snow → end_roll
+  ending_true → end_roll
+===== prologue.story =====
+  prologue_0 [选:prologue_1 | ch0_side2]
+  ch0_side2 → prologue_1
+  prologue_1 [选:prologue_2 | ch0_side1 | ch0_side3]
+  ch0_side3 → prologue_2
+  ch0_side1 → prologue_2
+  prologue_2 [选:prologue_3 | prologue_3a]
+  prologue_3a → prologue_3
+  prologue_3 [选:prologue_4a | prologue_4b]
+  prologue_4a → prologue_5
+  prologue_4b → prologue_5
+  prologue_5 [选:prologue_6]
+  prologue_6 [选:prologue_7]
+  prologue_7 [选:chapter1_1]
+  end_roll

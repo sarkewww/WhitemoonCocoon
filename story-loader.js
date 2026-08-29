@@ -63,7 +63,7 @@ const StoryLoader = (() => {
 
     const parseChoiceLine = (line) => {
       // 形式: [序号.] 文本 -> 场景 [选项]
-      const m = line.match(/^(?:\d+\.\s*)?(.+?)\s*->\s*(\S+)(?:\s*\[(.*)\])?$/);
+      const m = line.match(/^(?:\d+\.\s*)?(.+?)\s*->\s*(\S+)(?:\s*(\[.*\]))?$/);
       if (!m) return null;
       const ch = { text: m[1].trim(), next: m[2] };
       const opts = m[3];
@@ -158,11 +158,11 @@ const StoryLoader = (() => {
             for (i = i + 1; i < lines.length; i++) {
               const tline = lines[i];
               const tt = tline.trim();
-              if (tt === '') continue;
+              if (tt === '' || tt === "''") { i--; break; }
               if (tt === '? else:') break;
               if (/^\?\s*if/.test(tt)) { i--; break; }
-              if (tt.startsWith('    ') || tt.startsWith('\t')) {
-                trueText.push(tt.replace(/^    /, '').replace(/^'|'$/g, ''));
+              if (tline.startsWith('    ') || tline.startsWith('\t')) {
+                trueText.push(tt.replace(/^'|'$/g, ''));
               } else {
                 i--; break;
               }
@@ -173,10 +173,10 @@ const StoryLoader = (() => {
               for (i = i + 1; i < lines.length; i++) {
                 const tline = lines[i];
                 const tt = tline.trim();
-                if (tt === '') continue;
+                if (tt === '' || tt === "''") { i--; break; }
                 if (/^\?\s*if/.test(tt)) { i--; break; }
-                if (tt.startsWith('    ') || tt.startsWith('\t')) {
-                  elseText.push(tt.replace(/^    /, '').replace(/^'|'$/g, ''));
+                if (tline.startsWith('    ') || tline.startsWith('\t')) {
+                  elseText.push(tt.replace(/^'|'$/g, ''));
                 } else {
                   i--; break;
                 }

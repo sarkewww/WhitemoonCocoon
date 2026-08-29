@@ -16,6 +16,7 @@
   --green: #7dff9a;
   --gold: #ffd27d;
   --purple: #c78fff;
+  --blossom: #ffaadd;
   --blood: #8f2f3f;
   --mono: 'Cascadia Code', 'Consolas', 'Sarasa Mono SC', 'Source Han Mono', 'Noto Sans Mono CJK SC', 'PingFang SC', 'Microsoft YaHei', monospace;
 }
@@ -124,6 +125,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .story-text .speaker-b { color:var(--cyan-hi); }
 .story-text .speaker-c { color:var(--gold); }
 .story-text .speaker-d { color:var(--purple); }
+.story-text .speaker-e { color:var(--blossom); }
 .story-text .narr { color:var(--fg-dim); font-style:italic; }
 .story-text .em { color:var(--red-hi); font-weight:bold; }
 .story-text .blue { color:var(--cyan-hi); }

@@ -17,12 +17,16 @@ const Battle = (() => {
     sedative: { name:'镇魂药剂', desc:'侵蚀 -12', kind:'ero', ero:-12 },
     tear:     { name:'银泪结晶', desc:'恢复 30% HP + 侵蚀 -8', kind:'combo', heal:0.30, ero:-8 },
     shard:    { name:'苍月碎片', desc:'下回合攻击 +50%', kind:'buff', buff:'atk' },
+    memory_amulet: { name:'记忆防护符', desc:'侵蚀 -15', kind:'ero', ero:-15 },
+    dream_bandage: { name:'织梦绷带', desc:'恢复 30% SP', kind:'sp', sp:0.30 },
   };
   const MATERIALS = {
     tentacle_frag: { name:'触手残片', desc:'魔物的残骸，隐隐蠕动' },
     dark_crystal:  { name:'暗蚀结晶', desc:'浓缩的侵蚀之力，用于强化武器' },
     essence:       { name:'魂之精华', desc:'契约者力量的沉淀' },
     moon_petal:    { name:'月见花瓣', desc:'在月光下绽放的花瓣，安宁的气息' },
+    memory_shard:  { name:'记忆碎片', desc:'封存着某人记忆的碎片，在月光下微微发光' },
+    dream_silk:    { name:'织梦丝', desc:'夜之魔物吐出的丝线，缠绕着残留的梦境' },
   };
   const RECIPES = {
     r_potion:  { name:'调和魂愈药水', cost:{ tentacle_frag:2, moon_petal:1 }, out:{ id:'potion', count:1 } },
@@ -30,6 +34,8 @@ const Battle = (() => {
     r_sedative:{ name:'炼制镇魂药剂', cost:{ dark_crystal:1, moon_petal:3 }, out:{ id:'sedative', count:1 } },
     r_tear:    { name:'凝成银泪结晶', cost:{ essence:2, moon_petal:2 }, out:{ id:'tear', count:1 } },
     r_mega:    { name:'升华月光圣水', cost:{ potion:2, essence:1, moon_petal:2 }, out:{ id:'mega_potion', count:1 } },
+    r_memory_amulet: { name:'结缘记忆防护符', cost:{ memory_shard:2, moon_petal:2 }, out:{ id:'memory_amulet', count:1 } },
+    r_dream_bandage: { name:'织造织梦绷带', cost:{ dream_silk:2, essence:1 }, out:{ id:'dream_bandage', count:1 } },
   };
 
   // ---- 粒子系统 ----

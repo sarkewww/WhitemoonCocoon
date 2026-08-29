@@ -37,6 +37,8 @@ const Engine = (() => {
       playTime: 0,
       deaths: 0,
       decisions: {},
+      trust: { yuki: 0, suzu: 0, hagoromo: 0 },  // 好感度：雪/铃/羽衣 0-100
+      anchor: 50,  // 自我锚点 0-100：凌的意志残留。结局 gate 条件之一
       endings: [],
       skills: ['strike'],
       unlocked: {},
@@ -95,6 +97,9 @@ const Engine = (() => {
     if (typeof out.weaponLevel !== 'number' || out.weaponLevel < 1) out.weaponLevel = 1;
     if (typeof out.ap !== 'number') out.ap = 0;
     if (!out.doneScenes || typeof out.doneScenes !== 'object') out.doneScenes = {};
+    if (!out.trust || typeof out.trust !== 'object') out.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
+    else { out.trust.yuki = out.trust.yuki||0; out.trust.suzu = out.trust.suzu||0; out.trust.hagoromo = out.trust.hagoromo||0; }
+    if (typeof out.anchor !== 'number') out.anchor = 50;
     if (typeof out.ero !== 'number') out.ero = 0;
     if (typeof out.level !== 'number' || out.level < 1) out.level = 1;
     if (!Array.isArray(out.skills) || out.skills.length === 0) out.skills = ['strike'];
@@ -223,6 +228,19 @@ const Engine = (() => {
     return { ok:true, item:rp.out };
   }
   function addAP(n) { getState().ap += n; }
+  function addTrust(char, n) {
+    const st = getState();
+    if (!st.trust) st.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
+    if (char in st.trust) st.trust[char] = clamp(st.trust[char] + n, 0, 100);
+  }
+  function getTrust(char) {
+    const st = getState();
+    if (!st.trust) st.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
+    return st.trust[char] ?? 0;
+  }
+  function getTrustAll() { return Object.freeze({...getState().trust}); }
+  function addAnchor(n) { getState().anchor = clamp((getState().anchor||50) + n, 0, 100); }
+  function getAnchor() { return getState().anchor ?? 50; }
   function addStat(k, n) {
     const st = getState();
     if (st.ap < n) return false;
@@ -283,5 +301,10 @@ const Engine = (() => {
     addMaterial, hasMaterial, removeMaterial,
     unlockRecipe, hasRecipe, craftRecipe,
     addAP, addStat, recalcStats, upgradeWeapon, getStats,
+    addTrust, getTrust, getTrustAll,
+    addAnchor, getAnchor,
   };
 })();
+
+if (typeof window !== 'undefined') window.Engine = Engine;
+if (typeof module !== 'undefined' && module.exports) module.exports = Engine;
