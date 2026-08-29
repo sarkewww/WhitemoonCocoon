@@ -572,3 +572,5 @@ const Battle = (() => {
   return { start, stop, FX, Sfx, spawnDmg, wait, makeEnemy, computeDamage, getActionKey,
     ITEMS, MATERIALS, RECIPES };
 })();
+
+if (typeof window !== 'undefined') window.Battle = Battle;

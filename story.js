@@ -111,3 +111,5 @@ const Story = (() => {
   // 暴露 helper，供 story-data.js 反序列化的函数体使用
   return { get, reg, loadData, all, lv, f, sf, sv, gv, $, tr, at, an, ga };
 })();
+
+if (typeof window !== 'undefined') window.Story = Story;
