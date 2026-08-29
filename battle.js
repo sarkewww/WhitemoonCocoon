@@ -156,10 +156,12 @@ const Battle = (() => {
 
   // ---- 创建敌人 ----
   function makeEnemy(spec) {
+    const dm = Engine.getDifficultyMult ? Engine.getDifficultyMult() : { enemyHp:1, enemyAtk:1, eroMult:1 };
+    const hp = Math.round(spec.hp * dm.enemyHp);
     return {
       id: spec.id, name: spec.name, title: spec.title || '触手魔物',
-      hp: spec.hp, maxHp: spec.hp,
-      atk: spec.atk, def: spec.def, spd: spec.spd,
+      hp: hp, maxHp: hp,
+      atk: Math.round(spec.atk * dm.enemyAtk), def: spec.def, spd: spec.spd,
       xp: spec.xp,
       sprite: spec.sprite || [
         '  ╭───────╮  ',
@@ -474,7 +476,7 @@ const Battle = (() => {
       const xp = enemy.xp;
       S.xp += xp;
       S.kills++;
-      S.ero = Engine.clamp(S.ero + (enemy.eroGain||0), 0, 100);
+      S.ero = Engine.clamp(S.ero + (enemy.eroGain||0) * (Engine.getDifficultyMult ? Engine.getDifficultyMult().eroMult : 1), 0, 100);
       // 掉落材料
       const drops = enemy.drops || (enemy.isBoss
         ? { dark_crystal: 1, essence: 1, tentacle_frag: 1 }

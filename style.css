@@ -52,6 +52,8 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   text-align:left; letter-spacing:.1em; transition:all .15s;
 }
 .title-btn:hover, .title-btn:focus { border-color:var(--accent); background:rgba(143,143,255,.1); color:var(--accent-hi); outline:none; }
+.title-btn-diff { border-left-color:var(--gold); color:var(--gold); }
+.title-btn-diff:hover, .title-btn-diff:focus { border-color:var(--gold); color:var(--gold); background:rgba(255,210,125,.08); }
 
 /* ---- HUD ---- */
 .game { position:fixed; inset:0; display:flex; flex-direction:column; background:var(--bg); }

@@ -12,11 +12,13 @@ const Engine = (() => {
   let G = null; // 全局数据（来自 story.js / battle.js）
 
   // ---- 状态初始化 ----
-  function newGame() {
+  // 难度：easy / normal / hard
+  function newGame(difficulty = 'normal') {
     const s = {
       scene: 'prologue_0',
       sceneIdx: 0,          // 场景内推进位置
       chapter: 0,
+      difficulty: difficulty,
       flags: {},
       vars: {},
       hp: 100, maxHp: 100,
@@ -53,6 +55,16 @@ const Engine = (() => {
     s.atk = 12 + (s.stats.str)*4;
     s.def = 6 + (s.stats.vit)*2;
     s.spd = 10 + (s.stats.agi)*2;
+    // 难度加成
+    if (difficulty === 'easy') {
+      s.maxHp = Math.round(s.maxHp * 1.3); s.hp = s.maxHp;
+      s.atk = Math.round(s.atk * 1.2);
+    } else if (difficulty === 'hard') {
+      s.maxHp = Math.round(s.maxHp * 0.75);
+      s.hp = s.maxHp;
+      s.atk = Math.round(s.atk * 0.85);
+      s.def = Math.round(s.def * 0.85);
+    }
     return s;
   }
 
@@ -254,12 +266,19 @@ const Engine = (() => {
     return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
   }
 
+  function getDifficultyMult() {
+    const d = getState().difficulty || 'normal';
+    if (d === 'easy') return { enemyHp: 0.75, enemyAtk: 0.75, eroMult: 0.6 };
+    if (d === 'hard') return { enemyHp: 1.35, enemyAtk: 1.25, eroMult: 1.4 };
+    return { enemyHp: 1, enemyAtk: 1, eroMult: 1 };
+  }
+
   return {
     SAVE_KEY, newGame, serialize, deserialize,
     saveSlot, loadSlot, clearSlot, clearAuto, autoSave, hasAuto, loadAuto, migrateState,
     flag, setFlag, getVar, setVar, addVar,
     setStat, healFull, clamp, learnSkill, hasSkill,
-    getState, setState, setG, getG, formatTime,
+    getState, setState, setG, getG, formatTime, getDifficultyMult,
     addItem, hasItem, removeItem,
     addMaterial, hasMaterial, removeMaterial,
     unlockRecipe, hasRecipe, craftRecipe,

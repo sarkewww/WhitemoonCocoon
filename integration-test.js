@@ -70,6 +70,7 @@ global.App = {};
 new Function(fs.readFileSync(path.join(__dirname,'story-data.js'),'utf8'))();
 global.Battle = new Function('window','document', fs.readFileSync(path.join(__dirname,'battle.js'),'utf8')+'\nreturn Battle;')(global, global.document);
 global.App = new Function('window','document','Engine','Story','Battle', fs.readFileSync(path.join(__dirname,'main.js'),'utf8')+'\nreturn App;')(global, global.document, global.Engine, global.Story, global.Battle);
+App.setTypeSpeed(0); // 测试中跳过打字机动画
 
 const results=[];
 function t(name,fn){ try{ fn(); results.push(['PASS',name]); }catch(e){ results.push(['FAIL',name,e.message]); } }
@@ -101,7 +102,8 @@ t('boot 显示', () => {
     // 测试直接场景渲染
     await App.runScene('prologue_1');
     t('prologue_1 渲染文本', () => {
-      if(byId.storyText.innerHTML.indexOf('序')<0) throw new Error('无文本');
+      const hasText = byId.storyText.children.some(c => (c._innerHTML || '').indexOf('序') >= 0);
+      if(!hasText) throw new Error('无文本');
     });
     t('prologue_1 生成选项', () => {
       if(byId.choices.children.length<1) throw new Error('无选项');

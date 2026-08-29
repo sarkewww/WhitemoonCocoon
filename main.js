@@ -146,6 +146,9 @@ const App = (() => {
   }
 
   // ===== 标题菜单 =====
+  const DIFF_NAMES = { easy: '新手', normal: '普通', hard: '困难' };
+  let selectedDiff = 'normal';
+
   async function showTitle() {
     bootText.textContent = '';
     bootHint.textContent = '';
@@ -157,24 +160,35 @@ const App = (() => {
     const menu = [
       { key: '1', label: '新的游戏' },
       { key: '2', label: '继续游戏' + (Engine.hasAuto() ? ' (有存档)' : ''), fn: () => loadGame() },
-      { key: '3', label: '关于', fn: () => showAbout() },
+      { key: '3', label: '难度：' + (DIFF_NAMES[selectedDiff] || '普通'), diff: true },
+      { key: '4', label: '关于', fn: () => showAbout() },
     ];
-    bootHint.innerHTML = '<div class="title-menu">' + menu.map((m, i) =>
-      '<button class="title-btn" data-i="' + i + '">' + m.key + '. ' + m.label + '</button>'
-    ).join('') + '</div>';
+    const render = () => {
+      bootHint.innerHTML = '<div class="title-menu">' + menu.map((m, i) =>
+        '<button class="title-btn' + (m.diff ? ' title-btn-diff' : '') + '" data-i="' + i + '">' + m.key + '. ' + m.label + '</button>'
+      ).join('') + '</div>';
+    };
+    render();
 
     const cleanup = () => {
       document.removeEventListener('keydown', onKey);
       bootHint.removeEventListener('click', onClick);
     };
     const doChoice = (i) => {
-      if (i === 0) { cleanup(); startNewGame(); }
+      if (i === 0) { cleanup(); startNewGame(selectedDiff); }
       else if (i === 1) { cleanup(); loadGame(); }
-      else if (i === 2) { cleanup(); showAbout(); }
+      else if (i === 2) {
+        // 循环难度
+        const order = ['easy', 'normal', 'hard'];
+        selectedDiff = order[(order.indexOf(selectedDiff) + 1) % order.length];
+        menu[2].label = '难度：' + (DIFF_NAMES[selectedDiff] || '普通');
+        render();
+      }
+      else if (i === 3) { cleanup(); showAbout(); }
     };
     const onKey = (e) => {
       const n = parseInt(e.key);
-      if (n >= 1 && n <= 3) { cleanup(); doChoice(n - 1); }
+      if (n >= 1 && n <= 4) { cleanup(); doChoice(n - 1); }
     };
     const onClick = (e) => {
       const btn = e.target.closest ? e.target.closest('.title-btn') : null;
@@ -210,10 +224,10 @@ const App = (() => {
   }
 
   // ===== 新游戏 / 读档 =====
-  function startNewGame() {
+  function startNewGame(diff) {
     Engine.clearSlot();
     Engine.clearAuto();
-    Engine.setState(Engine.newGame());
+    Engine.setState(Engine.newGame(diff));
     bootEl.classList.add('hidden');
     gameEl.classList.remove('hidden');
     endEl.classList.add('hidden');
@@ -443,7 +457,7 @@ const App = (() => {
 
     lines = finalLines;
 
-    // 打字机效果（点击/按键可打断）
+    // 打字机效果（视觉小说式逐字显示，字数×0.6秒，点击/按键可跳过）
     typing = true;
     textSkip = false;
     for (let i=0; i<lines.length; i++) {
@@ -454,11 +468,9 @@ const App = (() => {
       }
       const el = document.createElement('div');
       el.className = 'line';
-      el.innerHTML = parseMarkup(lines[i]);
       storyText.appendChild(el);
       storyScroll.scrollTop = storyScroll.scrollHeight;
-      if (lines[i].length > 3) await waitInterruptible(110 + Math.min(lines[i].length*16, 360));
-      else await waitInterruptible(300);
+      await typeLine(el, lines[i]);
       if (textSkip) { textSkip = false; }
     }
     typing = false;
@@ -837,7 +849,82 @@ const App = (() => {
 
   function wait(ms) { return new Promise(r=>setTimeout(r,ms)); }
 
-  // 可打断等待：点击故事区域或按 Enter/空格 立即跳过当前行
+  // ===== 打字机效果（视觉小说式逐字显示） =====
+  let typeSpeed = 600; // 每字 ms，0=立即显示（测试用）
+  function setTypeSpeed(ms) { typeSpeed = ms; }
+
+  function typeLine(el, raw) {
+    return new Promise((resolve) => {
+      // 纯文本字数（去掉标签）
+      const clean = raw.replace(/\[[^\]]*\]/g, '').replace(/\{name\}|\{trueName\}/g, '');
+      const n = clean.length;
+      if (n <= 0 || typeSpeed <= 0) { el.innerHTML = parseMarkup(raw); resolve(); return; }
+
+      const total = Math.max(n * typeSpeed, 400);
+      const interval = total / n;
+      let done = false;
+      let idx = 0; // raw 中的位置
+
+      // 找下一个可显示字符
+      function nextChar(from) {
+        let i = from;
+        while (i < raw.length) {
+          if (raw[i] === '[') {
+            const end = raw.indexOf(']', i);
+            i = end === -1 ? raw.length : end + 1;
+            continue;
+          }
+          // 跳过 {name} 等占位符
+          if (raw[i] === '{') {
+            const end = raw.indexOf('}', i);
+            if (end > i) { i = end + 1; continue; }
+          }
+          return i + 1;
+        }
+        return raw.length;
+      }
+
+      const finish = () => {
+        if (done) return;
+        done = true;
+        cleanup();
+        el.innerHTML = parseMarkup(raw);
+        resolve();
+      };
+
+      const onPointer = (e) => {
+        if (!typing || battleEl && !battleEl.classList.contains('hidden')) return;
+        if (e.target && !(storyScroll.contains(e.target))) return;
+        e.preventDefault();
+        finish();
+      };
+      const onKey = (e) => {
+        if (!typing) return;
+        if (battleEl && !battleEl.classList.contains('hidden')) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          finish();
+        }
+      };
+
+      document.addEventListener('pointerdown', onPointer);
+      document.addEventListener('keydown', onKey);
+      const timer = setInterval(() => {
+        idx = nextChar(idx);
+        el.innerHTML = parseMarkup(raw.slice(0, idx));
+        storyScroll.scrollTop = storyScroll.scrollHeight;
+        if (idx >= raw.length) finish();
+      }, interval);
+      skipResolvers.add(finish);
+
+      function cleanup() {
+        clearInterval(timer);
+        skipResolvers.delete(finish);
+        document.removeEventListener('pointerdown', onPointer);
+        document.removeEventListener('keydown', onKey);
+      }
+    });
+  }
   let skipResolvers = new Set();
   function waitInterruptible(ms) {
     return new Promise((resolve) => {
@@ -880,7 +967,7 @@ const App = (() => {
   return { init, runScene, startBattle, showBattle, battleLog, promptAction, promptItem, setTurnActive,
     enemyEl, playerEl, shakeEnemy, shakePlayer, shakeHard, flashCrit, transformFlash, pulseEro,
     setCombo, setEnemySprite, updateEnemyBar, renderBattleBars, updateBattleState, dieAndRetry,
-    showDialog, hideDialog, showEnding, wait, updateHUD, renderStatus, updateSidePanel };
+    showDialog, hideDialog, showEnding, wait, updateHUD, renderStatus, updateSidePanel, setTypeSpeed };
 })();
 
 // ---- 启动 ----
