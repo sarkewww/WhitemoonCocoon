@@ -21,6 +21,7 @@ const App = (() => {
   let currentSceneId = '';
   let comboCount = 0;
   let textSkip = false;
+  let endTimer = null;
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
@@ -371,7 +372,7 @@ const App = (() => {
       b.addEventListener('click', () => {
         if (b.dataset.sys === 'save') { Engine.autoSave(); showDialog('存档已保存。'); }
         else if (b.dataset.sys === 'load') {
-          if (Engine.hasAuto()) { Engine.loadAuto(); showDialog('读档完成。'); togglePanel(false); runScene(Engine.getState().scene); }
+          if (Engine.hasAuto()) { Engine.loadAuto(); showDialog('读档完成。'); togglePanel(false); choiceLock = false; runScene(Engine.getState().scene); }
           else { showDialog('没有存档。'); }
         }
       });
@@ -426,6 +427,7 @@ const App = (() => {
 
     currentSceneId = id;
     S.scene = id;
+    if (endTimer) { clearTimeout(endTimer); endTimer = null; }
     storyEl.classList.remove('hidden');
     battleEl.classList.add('hidden');
     storyScroll.scrollTop = storyScroll.scrollHeight;
@@ -681,7 +683,7 @@ const App = (() => {
       '  ╱    ╲  ',
     ];
     enemyZone.innerHTML = '<div class="enemy-name">' + enemy.title + '</div><div class="enemy-sprite">' + sp.join('\n') + '</div><div class="enemy-hpbar"><div class="fill" id="enemyHpFill" style="width:100%"></div></div><div class="hp-label"><span class="hp-num" id="enemyHpLabel">' + enemy.hp + '</span> / ' + enemy.maxHp + '</div>';
-    playerZone.innerHTML = '<div class="player-sprite">' + psp.join('\n') + '</div><div class="player-name-b">' + Engine.getState().name + '</div>';
+    playerZone.innerHTML = '<div class="player-sprite">' + psp.join('\n') + '</div><div class="player-name-b">' + esc(Engine.getState().name) + '</div>';
   }
 
   function updateEnemyBar(enemy) {
@@ -852,6 +854,10 @@ const App = (() => {
   }
 
   // ===== 结局画面 =====
+  function scheduleEnding(ending) {
+    if (endTimer) clearTimeout(endTimer);
+    endTimer = setTimeout(() => { endTimer = null; showEnding(ending); }, 3000);
+  }
   function showEnding(ending) {
     if (timerInterval) clearInterval(timerInterval);
     Battle.stop();
@@ -1013,7 +1019,7 @@ const App = (() => {
   return { init, runScene, startBattle, showBattle, battleLog, promptAction, promptItem, setTurnActive,
     enemyEl, playerEl, shakeEnemy, shakePlayer, shakeHard, flashCrit, transformFlash, pulseEro,
     setCombo, setEnemySprite, updateEnemyBar, renderBattleBars, updateBattleState, dieAndRetry,
-    showDialog, hideDialog, showEnding, wait, updateHUD, renderStatus, updateSidePanel, setTypeSpeed };
+    showDialog, hideDialog, showEnding, scheduleEnding, wait, updateHUD, renderStatus, updateSidePanel, setTypeSpeed };
 })();
 
 if (typeof window !== 'undefined') window.App = App;

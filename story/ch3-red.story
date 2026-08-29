@@ -175,7 +175,6 @@ label m3_red_battle
   battle:
     enemy: red_suzu_berserk
     next: m3_red_after
-    lose: chapter3_death
 
 label m3_red_after
   transition

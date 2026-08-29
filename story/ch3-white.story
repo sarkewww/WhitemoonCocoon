@@ -121,7 +121,6 @@ label m3_white_3
   battle:
     enemy: white_hagoromo_guard
     next: m3_white_after
-    lose: chapter3_death
 
 label m3_white_after
   transition

@@ -147,7 +147,6 @@ label m3_lone_battle
   battle:
     enemy: lone_source_director
     next: m3_lone_after
-    lose: chapter3_death
 
 label m3_lone_after
   transition

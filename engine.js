@@ -97,14 +97,19 @@ const Engine = (() => {
     if (!Array.isArray(out.inventory)) out.inventory = [];
     if (!out.materials || typeof out.materials !== 'object') out.materials = {};
     if (!out.recipes || typeof out.recipes !== 'object') out.recipes = {};
-    if (typeof out.weaponLevel !== 'number' || out.weaponLevel < 1) out.weaponLevel = 1;
-    if (typeof out.ap !== 'number') out.ap = 0;
-    if (!out.doneScenes || typeof out.doneScenes !== 'object') out.doneScenes = {};
+    if (typeof out.weaponLevel !== 'number' || isNaN(out.weaponLevel) || out.weaponLevel < 1) out.weaponLevel = 1;
+    if (typeof out.ap !== 'number' || isNaN(out.ap)) out.ap = 0;
+    if (!out.doneScenes || typeof out.doneScenes !== 'object' || Array.isArray(out.doneScenes)) out.doneScenes = {};
     if (!out.trust || typeof out.trust !== 'object') out.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
     else { out.trust.yuki = out.trust.yuki||0; out.trust.suzu = out.trust.suzu||0; out.trust.hagoromo = out.trust.hagoromo||0; }
     if (typeof out.anchor !== 'number' || isNaN(out.anchor)) out.anchor = 50;
+    else out.anchor = Math.max(0, Math.min(100, out.anchor));
     if (typeof out.ero !== 'number' || isNaN(out.ero)) out.ero = 0;
-    if (typeof out.level !== 'number' || out.level < 1) out.level = 1;
+    else out.ero = Math.max(0, Math.min(100, out.ero));
+    if (typeof out.level !== 'number' || isNaN(out.level) || out.level < 1) out.level = 1;
+    ['hp','maxHp','sp','maxSp','atk','def','spd','xp','kills','damageDealt','damageTaken','playTime','deaths'].forEach(k => {
+      if (typeof out[k] !== 'number' || isNaN(out[k])) out[k] = base[k] || 0;
+    });
     if (!Array.isArray(out.skills) || out.skills.length === 0) out.skills = ['strike'];
     if (!Array.isArray(out.endings)) out.endings = [];
     recalcStats(out);

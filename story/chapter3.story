@@ -702,7 +702,7 @@ label chapter3_death
 
 label chapter3_5
   transition
-  onEnter: (s) => { Engine.addMaterial('dark_crystal', 1); Engine.addMaterial('essence', 1); Engine.unlockRecipe('r_mega'); }
+  onEnter: (s) => { Engine.addMaterial('dark_crystal', 1); Engine.addMaterial('essence', 1); Engine.unlockRecipe('r_mega'); Engine.unlockRecipe('r_memory_amulet'); Engine.unlockRecipe('r_dream_bandage'); }
   text:
     [n]卫兵倒下了。[/n]
     [n]她的身体化为光点，慢慢消散。[/n]

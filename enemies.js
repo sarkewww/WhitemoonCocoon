@@ -138,7 +138,7 @@ const ENEMIES = {
   source_defense: {
     id: 'source_defense', name: '源茧的触手', title: '源茧 · 防御机制',
     hp: 250, atk: 24, def: 8, spd: 11, xp: 100, eroGain: 6, isBoss: true,
-    drops: { memory_shard: 1 },
+    drops: { dark_crystal: 1, memory_shard: 1 },
     sprite: [
       '   ╭━━━━━╮   ',
       '  ┃ ◉  ◉ ┃  ',
@@ -213,7 +213,7 @@ const ENEMIES = {
 
   blue_yuki_yandere: {
     id: 'blue_yuki_yandere', name: '执念之雪', title: '青线 · 具现化的占有',
-    hp: 200, atk: 21, def: 5, spd: 16, xp: 90, eroGain: 6, isBoss: true,
+    hp: 220, atk: 23, def: 5, spd: 16, xp: 90, eroGain: 6, isBoss: true,
     sprite: [
       '   ╭──◉──╮   ',
       '  ╱  ◉◉  ╲  ',
