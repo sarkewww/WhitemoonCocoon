@@ -152,6 +152,6 @@ label ch2_gate_4
     [n]门缝里的暗紫微光，像一只缓缓睁开的眼，安静地等着她，做出最后一个决定。[/n]
   choices:
     1. 【红线】与铃同行——在她彻底消逝前，握紧她的手。 -> m3_red_1 [cond: Engine.getTrust('suzu') >= 55]
-    2. 【白线】与羽衣同行——那个被顶替了命运的人。 -> m3_white_1 [cond: Engine.getTrust('hagoromo') >= 55]
+    2. 【白线】与羽衣同行——那个被顶替了命运的人。 -> m3_white_1 [cond: Engine.getTrust('hagoromo') >= 30]
     3. 【青线】与雪同行——即使她正在变成茧。 -> m3_blue_1 [cond: Engine.getTrust('yuki') >= 55]
     4. 【孤狼】独自前行——不留后路。 -> m3_lone_1

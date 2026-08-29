@@ -102,8 +102,8 @@ const Engine = (() => {
     if (!out.doneScenes || typeof out.doneScenes !== 'object') out.doneScenes = {};
     if (!out.trust || typeof out.trust !== 'object') out.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
     else { out.trust.yuki = out.trust.yuki||0; out.trust.suzu = out.trust.suzu||0; out.trust.hagoromo = out.trust.hagoromo||0; }
-    if (typeof out.anchor !== 'number') out.anchor = 50;
-    if (typeof out.ero !== 'number') out.ero = 0;
+    if (typeof out.anchor !== 'number' || isNaN(out.anchor)) out.anchor = 50;
+    if (typeof out.ero !== 'number' || isNaN(out.ero)) out.ero = 0;
     if (typeof out.level !== 'number' || out.level < 1) out.level = 1;
     if (!Array.isArray(out.skills) || out.skills.length === 0) out.skills = ['strike'];
     if (!Array.isArray(out.endings)) out.endings = [];
@@ -268,9 +268,9 @@ const Engine = (() => {
       base.maxHp = Math.round(base.maxHp * 1.3);
       base.atk = Math.round(base.atk * 1.2);
     } else if (d === 'hard') {
-      base.maxHp = Math.round(base.maxHp * 0.75);
-      base.atk = Math.round(base.atk * 0.85);
-      base.def = Math.round(base.def * 0.85);
+      base.maxHp = Math.round(base.maxHp * 0.85);
+      base.atk = Math.round(base.atk * 0.9);
+      base.def = Math.round(base.def * 0.9);
     }
     st.maxHp = base.maxHp;
     st.maxSp = base.maxSp;
@@ -307,7 +307,7 @@ const Engine = (() => {
   function getDifficultyMult() {
     const d = getState().difficulty || 'normal';
     if (d === 'easy') return { enemyHp: 0.75, enemyAtk: 0.75, eroMult: 0.6 };
-    if (d === 'hard') return { enemyHp: 1.35, enemyAtk: 1.25, eroMult: 1.4 };
+    if (d === 'hard') return { enemyHp: 1.2, enemyAtk: 1.15, eroMult: 1.2 };
     return { enemyHp: 1, enemyAtk: 1, eroMult: 1 };
   }
 

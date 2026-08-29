@@ -117,7 +117,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .story-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
 .story-scroll::-webkit-scrollbar-thumb:hover { background:var(--border-hi); }
 /* 选项出现时，让文本上移一点，避免被选项覆盖；选项点击后移除恢复 */
-.story-scroll.has-choices { padding-bottom:92px; }
+.story-scroll.has-choices { padding-bottom:max(92px, calc(92px + env(safe-area-inset-bottom))); }
 .story-text { max-width:720px; white-space:pre-wrap; word-wrap:break-word; }
 .story-text .line { margin-bottom:.25em; }
 .story-text .beat { margin-top:.9em; }
@@ -143,7 +143,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .story-text .r18g { border:1px solid var(--blood); background:rgba(143,47,63,.08); color:var(--red-hi); padding:10px 14px; margin:1em 0; }
 
 /* 选项 */
-.choices { flex:0 0 auto; padding:10px 22px 16px; border-top:1px solid var(--border); }
+.choices { flex:0 0 auto; padding:10px 22px max(16px, calc(16px + env(safe-area-inset-bottom))); border-top:1px solid var(--border); }
 .choice-btn {
   display:block; width:100%; max-width:720px; text-align:left;
   background:var(--panel); color:var(--fg); border:1px solid var(--border);

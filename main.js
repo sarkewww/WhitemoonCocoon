@@ -22,6 +22,10 @@ const App = (() => {
   let comboCount = 0;
   let textSkip = false;
 
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
+  }
+
   function init() {
     bootEl = document.getElementById('boot');
     bootLogo = document.getElementById('bootLogo');
@@ -234,7 +238,7 @@ const App = (() => {
     endEl.classList.add('hidden');
     startTimer();
     initHUD();
-    runScene('prologue_1');
+    runScene('prologue_0');
   }
 
   function loadGame() {
@@ -244,6 +248,7 @@ const App = (() => {
       endEl.classList.add('hidden');
       startTimer();
       initHUD();
+      choiceLock = false;
       runScene(Engine.getState().scene);
     } else {
       bootHint.innerHTML = '没有存档。<br>按 Enter 返回。';
@@ -303,7 +308,7 @@ const App = (() => {
       return `<div class="row"><button class="save-btn craft-btn" data-recipe="${k}">${r.name}</button></div><div class="row" style="font-size:10px;color:var(--fg-dim);">${costStr}</div>`;
     }).join('');
     const html = [
-      '<div class="row"><span class="k">姓名</span><span class="v">'+S.name+'</span></div>',
+      '<div class="row"><span class="k">姓名</span><span class="v">'+esc(S.name)+'</span></div>',
       '<div class="row"><span class="k">Lv.</span><span class="v">'+S.level+'</span><span class="k">章</span><span class="v">'+ch+'</span></div>',
       '<div class="sec">── 状态 ──</div>',
       '<div class="row"><span class="k">HP</span><span class="v">'+S.hp+'/'+S.maxHp+'</span></div>',
@@ -386,13 +391,14 @@ const App = (() => {
   function renderSaveBar() {
     savebar.innerHTML = '<div>存档</div><div class="row"><button class="save-btn" id="btnSave">保存</button><button class="save-btn" id="btnLoad">读取</button></div>';
     document.getElementById('btnSave').addEventListener('click', () => {
-      Engine.autoSave();
-      showDialog('存档已保存。');
+      const ok = Engine.autoSave();
+      showDialog(ok ? '存档已保存。' : '存档失败（存储空间不足或隐私模式）。');
     });
     document.getElementById('btnLoad').addEventListener('click', () => {
       if (Engine.hasAuto()) {
         Engine.loadAuto();
         showDialog('读档完成。');
+        choiceLock = false;
         runScene(Engine.getState().scene);
       } else {
         showDialog('没有存档。');
@@ -447,7 +453,7 @@ const App = (() => {
     let finalLines = [];
     for (const line of lines) {
       if (typeof line === 'string') {
-        const processed = line.replace(/\{name\}/g, S.name).replace(/\{trueName\}/g, S.trueName);
+        const processed = line.replace(/\{name\}/g, esc(S.name)).replace(/\{trueName\}/g, esc(S.trueName));
         finalLines.push(processed);
       } else if (line.cond && line.cond(S)) {
         finalLines.push(line.text);
@@ -508,7 +514,9 @@ const App = (() => {
       // 选项出现时，给文本底部让出空间（上移一点，避免被选项遮住）
       storyScroll.classList.add('has-choices');
       // 键盘快捷键（点击任意选项后移除，避免残留到下一场景）
+      const sceneId = currentSceneId;
       const handler = (e) => {
+        if (currentSceneId !== sceneId) { document.removeEventListener('keydown', handler); return; }
         const n = parseInt(e.key);
         if (n >= 1 && n <= 9) {
           const btns = choicesEl.querySelectorAll('.choice-btn');
@@ -878,7 +886,7 @@ const App = (() => {
   // ===== 指令处理 =====
   function handleCmd(v) {
     if (v === 'save') { Engine.autoSave(); showDialog('存档已保存。'); }
-    else if (v === 'load') { Engine.loadAuto(); showDialog('读档完成。'); runScene(Engine.getState().scene); }
+    else if (v === 'load') { if (Engine.hasAuto()) { Engine.loadAuto(); choiceLock = false; runScene(Engine.getState().scene); showDialog('读档完成。'); } else { showDialog('没有存档。'); } }
     else if (v === 'status') { renderStatus(); showDialog('状态已更新。'); }
     else if (v === 'help') { showDialog('指令: save(存档) load(读档) status(状态) help(帮助)'); }
     else if (v === 'clear') { storyText.innerHTML = ''; }

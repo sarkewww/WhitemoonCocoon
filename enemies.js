@@ -122,6 +122,7 @@ const ENEMIES = {
   guard1: {
     id: 'guard1', name: '茧卫 · 侵蚀傀儡', title: '前代契约者',
     hp: 180, atk: 20, def: 7, spd: 9, xp: 55, eroGain: 3,
+    drops: { dream_silk: 1 },
     sprite: [
       '  ╭─◈─╮  ',
       '  │ ◉◉ │  ',
@@ -137,6 +138,7 @@ const ENEMIES = {
   source_defense: {
     id: 'source_defense', name: '源茧的触手', title: '源茧 · 防御机制',
     hp: 250, atk: 24, def: 8, spd: 11, xp: 100, eroGain: 6, isBoss: true,
+    drops: { memory_shard: 1 },
     sprite: [
       '   ╭━━━━━╮   ',
       '  ┃ ◉  ◉ ┃  ',

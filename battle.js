@@ -328,13 +328,13 @@ const Battle = (() => {
         const r = computeDamage(pl, enemy, { mult: 2.6, isSkill:true, ignoreDef:true });
         enemy.hp = Math.max(0, enemy.hp - r.dmg);
         S.damageDealt += r.dmg;
-        S.ero = Engine.clamp(S.ero + 12, 0, 100);
+        S.ero = Engine.clamp(S.ero + 8, 0, 100);
         combo += 2;
         UI.setCombo(combo);
         UI.shakeEnemy(true);
         UI.shakeHard();
         FX.burstCenter(UI.enemyEl(), { color:'#ff5f6f', count:34, speed:320, size:4 });
-        UI.battleLog(`蚀心之触从她体内涌出—— 魔物被撕裂！ ${r.dmg} 点伤害！ 侵蚀 +12。`, 'big');
+        UI.battleLog(`蚀心之触从她体内涌出—— 魔物被撕裂！ ${r.dmg} 点伤害！ 侵蚀 +8。`, 'big');
         if (r.crit) { Sfx.crit(); UI.flashCrit(); }
         spawnDmg(UI.enemyEl(), r.dmg, 'crit');
         UI.updateEnemyBar(enemy);
@@ -445,8 +445,8 @@ const Battle = (() => {
         }
         case 'erosionBurst': {
           dmg = Math.max(1, Math.round(enemy.atk*0.7 - pl.def*0.2));
-          S.ero = Engine.clamp(S.ero + 6, 0, 100);
-          UI.battleLog('侵蚀的气息渗入身体—— 侵蚀 +6！', 'erosion');
+          S.ero = Engine.clamp(S.ero + 3, 0, 100);
+          UI.battleLog('侵蚀的气息渗入身体—— 侵蚀 +3！', 'erosion');
           break;
         }
       }
@@ -529,6 +529,15 @@ const Battle = (() => {
     // ===== 主战斗循环 =====
     UI.battleLog(enemy.title + ' 「' + enemy.name + '」出现了！', 'big');
     await wait(500);
+
+    // 先手判定：若敌 spd > 玩家 spd，敌人先手一击
+    const firstStrike = (enemy.spd > S.spd);
+    if (firstStrike) {
+      await enemyPhase();
+      if (ended || myId !== animId) return ctx;
+      if (S.hp <= 0) { await onLose(enemy); return ctx; }
+      if (enemy.hp <= 0) { await onWin(enemy); return ctx; }
+    }
 
     while (!ended && myId === animId) {
       if (enemy.hp <= 0) { await onWin(enemy); break; }

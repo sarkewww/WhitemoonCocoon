@@ -918,7 +918,7 @@ label prologue_7
     1. 回到学校，面对新的一天 -> ch0_inter_1 [chapter=1]
 
 label end_roll
-  onEnter: (s) => { const end = s.endings[0] || '白月'; setTimeout(() => App.showEnding(end), 500); }
+  onEnter: (s) => { const end = (s.endings && s.endings.length ? s.endings[s.endings.length-1] : '白月'); setTimeout(() => App.showEnding(end), 3000); }
   text:
      
     ─  ─  ─  ─  ─  ─  ─  ─  ─  ─
