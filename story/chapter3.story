@@ -1315,9 +1315,9 @@ label chapter3_7
     [n]她睁开了眼睛。[/n]
     [n]然后，她做出了决定。[/n]
   choices:
-    1. 不接受——「我要摧毁它」 -> chapter3_battle [flag=choice_destroy]
-    2. 接受——成为新的核心 -> chapter3_battle [flag=choice_become_core]
-    3. 犹豫——「我需要时间思考」 -> chapter3_battle [flag=choice_hesitate]
+    1. 不接受——「我要摧毁它」 -> ch3_echo_1 [flag=choice_destroy]
+    2. 接受——成为新的核心 -> ch3_echo_1 [flag=choice_become_core]
+    3. 犹豫——「我需要时间思考」 -> ch3_echo_1 [flag=choice_hesitate]
 
 label chapter3_battle
   text:
@@ -1411,7 +1411,7 @@ label chapter3_battle
     [n]源茧表面的裂纹，在这一刀之下，终于彻底崩裂开来。[/n]
   battle:
     enemy: source_defense
-    next: m3_pain_harvest
+    next: ch3_count_1
     lose: chapter3_battle_death
 
 label chapter3_battle_death

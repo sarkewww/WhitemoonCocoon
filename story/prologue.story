@@ -915,7 +915,7 @@ label prologue_7
     [n]明天，还要上学。[/n]
     [n]转学生，就要来了。[/n]
   choices:
-    1. 回到学校，面对新的一天 -> chapter1_1 [chapter=1]
+    1. 回到学校，面对新的一天 -> ch0_inter_1 [chapter=1]
 
 label end_roll
   onEnter: (s) => { const end = s.endings[0] || '白月'; setTimeout(() => App.showEnding(end), 500); }

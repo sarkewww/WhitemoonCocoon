@@ -38,26 +38,14 @@ const Story = (() => {
 
   // ===== 运行时动态逻辑（原 story.js 中的 scenes['x'] 覆写）=====
   function applyDynamicLogic() {
-    // chapter2_end：根据信任度注入第三章分线选择（红/白/青/孤狼）
+    // chapter2_end：进入异界之门序列（ch2_gate_*，分线在 ch2_gate_4 按信任度选择）
     const orig2_end = scenes['chapter2_end'];
     if (orig2_end) {
       scenes['chapter2_end'] = {
         ...orig2_end,
         onEnter: (s) => { if (orig2_end.onEnter) orig2_end.onEnter(s); },
         get choices() {
-          const st = Engine.getState();
-          const choices = [];
-          if ((st.trust?.suzu || 0) >= 55) {
-            choices.push({ text: '【红线】与铃同行——在她彻底消逝前，握紧她的手。', next: 'm3_red_1', flag: 'm3_red' });
-          }
-          if ((st.trust?.hagoromo || 0) >= 55) {
-            choices.push({ text: '【白线】与羽衣同行——那个被顶替了命运的人。', next: 'm3_white_1', flag: 'm3_white' });
-          }
-          if ((st.trust?.yuki || 0) >= 55) {
-            choices.push({ text: '【青线】与雪同行——即使她正在变成茧。', next: 'm3_blue_1', flag: 'm3_blue' });
-          }
-          choices.push({ text: '【孤狼】独自前行——不留后路。', next: 'm3_lone_1', flag: 'm3_lone' });
-          return choices;
+          return [{ text: '前往异界——源茧的所在地', next: 'ch2_gate_1', chapter: 3 }];
         },
       };
     }
