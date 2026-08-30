@@ -145,6 +145,73 @@ t('场景数量统计', () => {
   console.log('  可达场景数: ' + seen.size);
 });
 
+// ============================================================================
+// 追加块：RPG 核心模块（core/world.js / core/daycycle.js / core/game.js）
+// 加载链依赖本文件顶部的 global.localStorage / Engine / Story 已就绪。
+// 只追加，不动既有测试。
+// ============================================================================
+
+// 载入 core 模块（IIFE，导出 window.X + module.exports）
+const World = require(path.join(__dirname, 'core', 'world.js'));
+global.World = World;
+const DayCycle = require(path.join(__dirname, 'core', 'daycycle.js'));
+global.DayCycle = DayCycle;
+const Game = require(path.join(__dirname, 'core', 'game.js')); // 闭包引用全局 Engine/World/DayCycle
+global.Game = Game;
+
+// 注册空视图回调（Game 只做纯逻辑验证，不调用 view 业务）
+Game.register({
+  renderMap: () => {}, runStory: () => Promise.resolve(), runBattle: () => Promise.resolve(),
+  showHud: () => {}, log: () => {},
+});
+
+// 确定性测试地图：每地点仅 1 个事件，候选池唯一
+World.defineMap(100, [
+  { id: 's_a', name: 'SA', conns: ['s_b'], events: [{ id: 'ev_any', scene: 'sc_any', when: 'any', once: true }] },
+  { id: 's_b', name: 'SB', conns: ['s_a'], events: [] },
+]);
+
+t('core.World defineMap/getReachable', () => {
+  if (World.getMap(100).length !== 2) throw new Error('地图长度错误');
+  const ids = World.getReachable(100, 's_a').map(l => l.id);
+  if (ids.join(',') !== 's_b') throw new Error('相邻错误: '+ids.join(','));
+});
+
+t('core.World rollEvent once 过滤', () => {
+  const st = Engine.newGame();
+  st.doneScenes = {}; st.day = 1; st.phase = 'day'; st.ap = 2;
+  const ev = World.rollEvent(100, 's_a', 'day', st);
+  if (!ev || ev.scene !== 'sc_any') throw new Error('应抽到 sc_any');
+  st.doneScenes['sc_any'] = true;
+  if (World.rollEvent(100, 's_a', 'day', st) !== null) throw new Error('once 已做不应再抽到');
+});
+
+t('core.DayCycle ensure 默认值', () => {
+  const S = {};
+  DayCycle.ensure(S);
+  if (S.day !== 1 || S.phase !== 'day' || S.ap !== 2) throw new Error('默认字段错误');
+});
+
+t('core.DayCycle advance/spend', () => {
+  const S = { day: 1, phase: 'day', ap: 2, dayCounters: {} };
+  const r1 = DayCycle.advance(S);
+  if (r1.to !== 'night' || S.ap !== 1) throw new Error('day->night 错误');
+  if (!DayCycle.spend(S, 'fight')) throw new Error('夜晚应能花费');
+  const r2 = DayCycle.advance(S);
+  if (r2.to !== 'day' || S.day !== 2 || S.ap !== 2) throw new Error('night->day 错误');
+});
+
+t('core.Game explore/moveTo 纯逻辑', () => {
+  const S = Engine.newGame();
+  S.doneScenes = {}; S.day = 1; S.phase = 'day'; S.ap = 2; S.dayCounters = {};
+  Engine.setState(S);
+  Game.explore(100, 's_a');
+  if (Game.getChapter() !== 100 || Game.getCurrentLoc() !== 's_a') throw new Error('explore 初始化错误');
+  Game.moveTo('s_b');
+  if (Game.getCurrentLoc() !== 's_b') throw new Error('moveTo 相邻移动失败');
+});
+
+// ---- 汇总输出（移至文件末尾，确保所有测试已注册）----
 results.forEach(r => console.log(r.join(' | ')));
 const failed = results.filter(r => r[0] === 'FAIL');
 console.log(failed.length === 0 ? '\nALL TESTS PASSED' : '\n'+failed.length+' FAILED');

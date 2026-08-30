@@ -9,7 +9,8 @@ const App = (() => {
     battleEl, battleLogEl, battleMenu, enemyZone, playerZone, hudName, hudSub, hudChapter, hudTime,
     statusBox, savebar, cmd, dialogEl, dialogBox, endEl, endArt, endTitle, endSub, endStats,
     storyScroll, battleBars, arena,
-    panelEl, panelBody, menuBtn, panelClose;
+    panelEl, panelBody, menuBtn, panelClose,
+    mapEl, mapHead, mapCanvas, mapNodes, mapSvg, mapFoot, mapActions;
 
   let sceneQueue = [];
   let turnCallback = null;
@@ -62,6 +63,23 @@ const App = (() => {
     panelBody = document.getElementById('panelBody');
     menuBtn = document.getElementById('menuBtn');
     panelClose = document.getElementById('panelClose');
+    mapEl = document.getElementById('map');
+    mapHead = document.getElementById('mapHead');
+    mapCanvas = document.getElementById('mapCanvas');
+    mapNodes = document.getElementById('mapNodes');
+    mapSvg = document.getElementById('mapSvg');
+    mapFoot = document.getElementById('mapFoot');
+    mapActions = document.getElementById('mapActions') || null;
+
+    if (typeof Game !== 'undefined' && Game.register) {
+      Game.register({
+        renderMap: (map, curLoc, dayInfo) => renderMapView(map, curLoc, dayInfo),
+        runStory: (sceneId) => runScene(sceneId),
+        runBattle: (enemyId, onWin, onLose) => startBattle({ enemy: enemyId, onWin, onLose }),
+        showHud: () => updateHUD(),
+        log: (msg) => showDialog(msg),
+      });
+    }
 
     Battle.FX.init();
     Engine.setG(Battle);
@@ -168,6 +186,7 @@ const App = (() => {
       { key: '2', label: '继续游戏' + (Engine.hasAuto() ? ' (有存档)' : ''), fn: () => loadGame() },
       { key: '3', label: '难度：' + (DIFF_NAMES[selectedDiff] || '普通'), diff: true },
       { key: '4', label: '关于', fn: () => showAbout() },
+      { key: '5', label: '探索模式（RPG试玩）', fn: () => startExplore() },
     ];
     const render = () => {
       bootHint.innerHTML = '<div class="title-menu">' + menu.map((m, i) =>
@@ -191,10 +210,11 @@ const App = (() => {
         render();
       }
       else if (i === 3) { cleanup(); showAbout(); }
+      else if (i === 4) { cleanup(); startExplore(); }
     };
     const onKey = (e) => {
       const n = parseInt(e.key);
-      if (n >= 1 && n <= 4) { doChoice(n - 1); }
+      if (n >= 1 && n <= 5) { doChoice(n - 1); }
     };
     const onClick = (e) => {
       const btn = e.target.closest ? e.target.closest('.title-btn') : null;
@@ -429,6 +449,7 @@ const App = (() => {
     S.scene = id;
     if (endTimer) { clearTimeout(endTimer); endTimer = null; }
     storyEl.classList.remove('hidden');
+    if (mapEl) mapEl.classList.add('hidden');
     battleEl.classList.add('hidden');
     storyScroll.scrollTop = storyScroll.scrollHeight;
     choiceLock = true;
@@ -1014,6 +1035,144 @@ const App = (() => {
         document.removeEventListener('keydown', onKey);
       }
     });
+  }
+
+  // ===== RPG 地图渲染 =====
+  function descSummary(desc) {
+    const s = String(desc || '').replace(/\[[^\]]*\]/g, '').trim();
+    return s.length > 20 ? s.slice(0, 20) + '…' : s;
+  }
+
+  function renderMapView(map, curLoc, dayInfo) {
+    if (!mapEl) return;
+    if (battleEl) battleEl.classList.add('hidden');
+    if (storyEl) storyEl.classList.add('hidden');
+    mapEl.classList.remove('hidden');
+
+    const S = Engine.getState();
+    const ch = S.chapter;
+    const phaseName = (dayInfo && dayInfo.phase === 'night') ? '夜晚' : '白天';
+    const day = dayInfo ? dayInfo.day : 1;
+    const ap = dayInfo ? dayInfo.ap : 0;
+
+    if (mapHead) {
+      mapHead.innerHTML = '<span class="map-title">第' + ch + '章 · 夜见市</span><span class="map-info">第' + day + '天 · ' + phaseName + ' · 行动点 ' + ap + '</span>';
+    }
+
+    const svg = document.getElementById('mapSvg') || mapSvg;
+    const nodesEl = document.getElementById('mapNodes') || mapNodes;
+    if (svg) svg.innerHTML = '';
+    if (nodesEl) nodesEl.innerHTML = '';
+    if (!nodesEl) return;
+
+    const locById = {};
+    map.forEach(l => locById[l.id] = l);
+
+    if (svg) {
+      const edges = [];
+      const drawn = new Set();
+      map.forEach(l => {
+        (l.conns || []).forEach(cid => {
+          const t = locById[cid];
+          if (!t || !l.x || !t.x) return;
+          const key = [l.id, cid].sort().join(':');
+          if (drawn.has(key)) return;
+          drawn.add(key);
+          edges.push('<line class="map-edge" x1="' + l.x + '" y1="' + l.y + '" x2="' + t.x + '" y2="' + t.y + '"/>');
+        });
+      });
+      svg.innerHTML = edges.join('');
+    }
+
+    const reachIds = new Set();
+    if (typeof World !== 'undefined' && World.getReachable) {
+      World.getReachable(ch, curLoc).forEach(l => reachIds.add(l.id));
+    }
+
+    map.forEach(l => {
+      const btn = document.createElement('button');
+      btn.className = 'map-node';
+      btn.dataset.loc = l.id;
+      btn.style.left = l.x + 'px';
+      btn.style.top = l.y + 'px';
+      btn.innerHTML = esc(l.name) + (l.desc ? '<span class="node-tag">' + esc(descSummary(l.desc)) + '</span>' : '');
+
+      if (l.id === curLoc) btn.classList.add('cur');
+      else if (!reachIds.has(l.id)) {
+        btn.classList.add('locked');
+        btn.disabled = true;
+      }
+
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        if (l.id === curLoc) {
+          onCurrentLocClick(l);
+        } else if (typeof Game !== 'undefined' && Game.moveTo) {
+          Game.moveTo(l.id);
+        }
+      });
+      nodesEl.appendChild(btn);
+    });
+
+    renderMapFoot(day, phaseName, ap);
+  }
+
+  function onCurrentLocClick(loc) {
+    if (typeof World === 'undefined' || typeof Game === 'undefined') return;
+    const S = Engine.getState();
+    const ev = World.rollEvent(S.chapter, loc.id, S.phase || 'day', S);
+    if (ev) {
+      Game.fireAt(loc.id, 0);
+    } else {
+      showDialog('这里没有事可做');
+    }
+  }
+
+  function renderMapFoot(day, phaseName, ap) {
+    if (!mapFoot) return;
+    mapFoot.innerHTML = '';
+    const info = document.createElement('div');
+    info.id = 'mapInfo';
+    info.className = 'map-desc';
+    info.textContent = '行动点 ' + ap + ' · ' + phaseName + ' · 第' + day + '天';
+    const actions = document.createElement('div');
+    actions.id = 'mapActions';
+    actions.className = 'map-actions';
+    const restBtn = document.createElement('button');
+    restBtn.className = 'map-btn';
+    restBtn.textContent = '休息';
+    restBtn.addEventListener('click', () => {
+      if (typeof Game !== 'undefined' && Game.passTime) Game.passTime();
+    });
+    const mainBtn = document.createElement('button');
+    mainBtn.className = 'map-btn';
+    mainBtn.textContent = '继续主线';
+    mainBtn.addEventListener('click', () => continueMainline());
+    actions.appendChild(restBtn);
+    actions.appendChild(mainBtn);
+    mapFoot.appendChild(info);
+    mapFoot.appendChild(actions);
+  }
+
+  function continueMainline() {
+    if (typeof Game !== 'undefined' && Game.returnToMap) Game.returnToMap();
+    showDialog('主线功能待接入');
+  }
+
+  function startExplore() {
+    Engine.clearSlot();
+    Engine.clearAuto();
+    Engine.setState(Engine.newGame('normal'));
+    bootEl.classList.add('hidden');
+    gameEl.classList.remove('hidden');
+    endEl.classList.add('hidden');
+    startTimer();
+    initHUD();
+    if (typeof Game !== 'undefined' && Game.explore) {
+      Game.explore(1);
+    } else {
+      showDialog('探索模式需要 RPG 核心模块（core/game.js）支持。');
+    }
   }
 
   return { init, runScene, startBattle, showBattle, battleLog, promptAction, promptItem, setTurnActive,

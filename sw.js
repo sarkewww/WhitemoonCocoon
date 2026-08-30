@@ -1,5 +1,5 @@
 /* 白月茧响 - Service Worker（离线缓存） */
-const CACHE_NAME = 'wmc-v2';
+const CACHE_NAME = 'wmc-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,9 @@ const ASSETS = [
   './enemies.js',
   './story.js',
   './story-data.js',
+  './core/world.js',
+  './core/daycycle.js',
+  './core/game.js',
   './battle.js',
   './main.js',
   './manifest.webmanifest',

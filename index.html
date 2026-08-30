@@ -57,6 +57,18 @@
       <div id="choices" class="choices"></div>
     </div>
 
+    <div id="map" class="map hidden">
+      <div class="map-head" id="mapHead"></div>
+      <div class="map-canvas" id="mapCanvas">
+        <svg id="mapSvg" class="map-svg"></svg>
+        <div id="mapNodes" class="map-nodes"></div>
+      </div>
+      <div class="map-foot" id="mapFoot">
+        <div class="map-info" id="mapInfo"></div>
+        <div class="map-actions" id="mapActions"></div>
+      </div>
+    </div>
+
     <div id="side" class="side">
       <div class="status" id="statusBox"></div>
       <div class="savebar" id="savebar"></div>
@@ -98,6 +110,9 @@
 <script src="enemies.js"></script>
 <script src="story.js"></script>
 <script src="story-data.js"></script>
+<script src="core/world.js"></script>
+<script src="core/daycycle.js"></script>
+<script src="core/game.js"></script>
 <script src="battle.js"></script>
 <script src="main.js"></script>
 <script>
