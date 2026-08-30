@@ -160,8 +160,37 @@ const Battle = (() => {
     setTimeout(() => d.remove(), 1100);
   }
 
+  // ---- 敌人 id -> 定义查找（enemies.js 的全局表）----
+  function resolveEnemy(id) {
+    const table = (typeof window !== 'undefined' && window.ENEMIES) ||
+                  (typeof ENEMIES !== 'undefined' ? ENEMIES : null);
+    return table ? (table[id] || null) : null;
+  }
+
+  const DEFAULT_WEAK_ENEMY = {
+    id: 'default_weak', name: '幻影魔物', title: '游荡的残影',
+    hp: 40, atk: 6, def: 1, spd: 5, xp: 8,
+    sprite: [
+      '  ╭─────╮  ',
+      '  │ ◉ ◉ │  ',
+      '  ╰─▼─╯  ',
+      '  〰 〰 〰  ',
+    ],
+  };
+
   // ---- 创建敌人 ----
-  function makeEnemy(spec) {
+  // 支持传入定义对象，或传入 enemies.js 中的字符串 id（世界/地图战斗用）
+  function makeEnemy(specOrId) {
+    let spec = specOrId;
+    if (typeof spec === 'string') {
+      spec = resolveEnemy(spec);
+      if (!spec) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn('[battle] 未知敌人 id：「' + specOrId + '」，回退默认弱怪');
+        }
+        spec = Object.assign({}, DEFAULT_WEAK_ENEMY, { id: specOrId, name: specOrId });
+      }
+    }
     const dm = Engine.getDifficultyMult ? Engine.getDifficultyMult() : { enemyHp:1, enemyAtk:1, eroMult:1 };
     const hp = Math.round(spec.hp * dm.enemyHp);
     return {
@@ -184,6 +213,7 @@ const Battle = (() => {
       isBoss: !!spec.isBoss,
       weak: spec.weak || null,           // 'pure' 弱点
       eroGain: spec.eroGain || 0,        // 击败后侵蚀增加
+      drops: spec.drops || null,         // 自定义掉落（memory_shard / dream_silk 等）
     };
   }
 
@@ -500,7 +530,7 @@ const Battle = (() => {
       while (S.xp >= S.level*40) {
         S.xp -= S.level*40;
         S.level++;
-        Engine.addAP(2);           // 升级送属性点
+        Engine.addStatPts(2);      // 升级送属性点
         S.maxHp += 8; S.maxSp += 4; S.atk += 2; S.def += 1; S.spd += 1;
         S.hp = S.maxHp; S.sp = S.maxSp;
         leveled = true;

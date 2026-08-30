@@ -61,7 +61,10 @@ const DayCycle = (() => {
     return { from: 'night', to: 'day', day: S.day };
   }
 
-  // 休息（无条件推进时段，用于"无事可做"时）
+  // 休息（COST.rest = 0，不耗行动点）：无条件推进时段，用于"无事可做"时。
+  // 与 advance 区别：advance 由玩家主动选择"推进时段"（同样会刷新行动点），
+  // rest 语义上表示"就地休息等待"，结果相同（推进到夜晚/次日并刷新行动点），
+  // 这里保留独立函数便于后续给 rest 附加特殊效果（如回血/降侵蚀）。
   function rest(S) { return advance(S); }
 
   // 当前章已过天数（用于主线触发门槛）

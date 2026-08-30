@@ -23,9 +23,51 @@ const App = (() => {
   let comboCount = 0;
   let textSkip = false;
   let endTimer = null;
+  let _mapDrag = null;
+
+  // 自然融入：章节开头场景 → 对应章节地图（RPG 自由行动层）
+  const CHAPTER_MAP_ENTRY = { 'chapter1_1': 1, 'chapter2_1': 2, 'chapter3_1': 3 };
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
+  }
+
+  // ===== 轻触检测：区分"点击"与"滑动" =====
+  // 手机滑动（起点也是 pointerdown）不再被误判为跳过；
+  // 且不调用 preventDefault，让原生滚动正常工作。
+  let _tap = { active:false, pid:-1, x:0, y:0, t:0 };
+  function registerTap(cb, opts={}) {
+    const { within=null, threshold=12, maxMs=650 } = opts;
+    const onDown = (e) => {
+      if (within && e.target && !within.contains(e.target)) return;
+      if (e.target && e.target.closest && e.target.closest('button, input, a, textarea, select, .choice-btn, .map-node, .map-btn, .save-btn, .hud-btn, .panel-close, .title-btn, .end-btn')) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      _tap = { active:true, pid:e.pointerId, x:e.clientX, y:e.clientY, t:Date.now() };
+    };
+    const onUp = (e) => {
+      if (!_tap.active || e.pointerId !== _tap.pid) return;
+      _tap.active = false;
+      const dist = Math.abs(e.clientX - _tap.x) + Math.abs(e.clientY - _tap.y);
+      if (dist < threshold && Date.now() - _tap.t < maxMs) cb(e);
+    };
+    const onCancel = () => { _tap.active = false; };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onCancel);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onCancel);
+    };
+  }
+
+  // 跟随滚动：仅在用户靠近底部时自动滚到底，避免打字时上滑被拽回
+  function followBottom() {
+    const sc = storyScroll;
+    if (!sc) return;
+    if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 48) {
+      sc.scrollTop = sc.scrollHeight;
+    }
   }
 
   function init() {
@@ -70,6 +112,8 @@ const App = (() => {
     mapSvg = document.getElementById('mapSvg');
     mapFoot = document.getElementById('mapFoot');
     mapActions = document.getElementById('mapActions') || null;
+
+    initMapDrag();
 
     if (typeof Game !== 'undefined' && Game.register) {
       Game.register({
@@ -186,7 +230,6 @@ const App = (() => {
       { key: '2', label: '继续游戏' + (Engine.hasAuto() ? ' (有存档)' : ''), fn: () => loadGame() },
       { key: '3', label: '难度：' + (DIFF_NAMES[selectedDiff] || '普通'), diff: true },
       { key: '4', label: '关于', fn: () => showAbout() },
-      { key: '5', label: '探索模式（RPG试玩）', fn: () => startExplore() },
     ];
     const render = () => {
       bootHint.innerHTML = '<div class="title-menu">' + menu.map((m, i) =>
@@ -210,11 +253,10 @@ const App = (() => {
         render();
       }
       else if (i === 3) { cleanup(); showAbout(); }
-      else if (i === 4) { cleanup(); startExplore(); }
     };
     const onKey = (e) => {
       const n = parseInt(e.key);
-      if (n >= 1 && n <= 5) { doChoice(n - 1); }
+      if (n >= 1 && n <= 4) { doChoice(n - 1); }
     };
     const onClick = (e) => {
       const btn = e.target.closest ? e.target.closest('.title-btn') : null;
@@ -250,7 +292,20 @@ const App = (() => {
   }
 
   // ===== 新游戏 / 读档 =====
+  // 从存档场景恢复：若 scene 为 '@map:<章节>'（位于地图层），恢复地图而非重放剧本。
+  function continueFromSavedScene(sceneId) {
+    if (typeof sceneId === 'string' && sceneId.indexOf('@map:') === 0) {
+      const chapter = parseInt(sceneId.slice(5), 10);
+      if (!isNaN(chapter) && typeof Game !== 'undefined' && Game.explore) {
+        Game.explore(chapter);
+        return true;
+      }
+    }
+    return false;
+  }
+
   function startNewGame(diff) {
+    choiceLock = false;
     Engine.clearSlot();
     Engine.clearAuto();
     Engine.setState(Engine.newGame(diff));
@@ -270,7 +325,9 @@ const App = (() => {
       startTimer();
       initHUD();
       choiceLock = false;
-      runScene(Engine.getState().scene);
+      if (!continueFromSavedScene(Engine.getState().scene)) {
+        runScene(Engine.getState().scene);
+      }
     } else {
       bootHint.innerHTML = '没有存档。<br>按 Enter 返回。';
       const handler = (e) => {
@@ -308,6 +365,15 @@ const App = (() => {
     updateSidePanel();
   }
 
+  // 配方/材料查询：优先 core/data.js（Data 为唯一数据源），缺失时回退 battle.js 旧表
+  function dataRecipe(k) {
+    return (typeof window !== 'undefined' && window.Data && window.Data.getRecipe) ?
+      (window.Data.getRecipe(k) || ((Battle.RECIPES||{})[k])) : ((Battle.RECIPES||{})[k]);
+  }
+  function dataMaterial(k) {
+    return (typeof window !== 'undefined' && window.Data && window.Data.getMaterial) ?
+      (window.Data.getMaterial(k) || ((Battle.MATERIALS||{})[k])) : ((Battle.MATERIALS||{})[k]);
+  }
   function updateSidePanel(panelEl) {
     const S = Engine.getState();
     const ch = ['序章','第一章','第二章','第三章','终章'][S.chapter]||'序章';
@@ -316,14 +382,14 @@ const App = (() => {
       return d ? `<div class="row"><span class="k">·</span><span class="v gray">${d.name} ×${i.count}</span></div>` : '';
     }).join('');
     const mats = Object.entries(S.materials).map(([k,v]) => {
-      const d = (Battle.MATERIALS||{})[k];
+      const d = dataMaterial(k);
       return d ? `<div class="row"><span class="k">·</span><span class="v gray">${d.name} ×${v}</span></div>` : '';
     }).join('');
     const craftBtns = Object.entries(S.recipes).map(([k]) => {
-      const r = (Battle.RECIPES||{})[k];
+      const r = dataRecipe(k);
       if (!r) return '';
       const costStr = Object.entries(r.cost).map(([m,n]) => {
-        const md = (Battle.MATERIALS||{})[m];
+        const md = dataMaterial(m);
         return (md?md.name:m)+' ×'+n;
       }).join(' ');
       return `<div class="row"><button class="save-btn craft-btn" data-recipe="${k}">${r.name}</button></div><div class="row" style="font-size:10px;color:var(--fg-dim);">${costStr}</div>`;
@@ -336,15 +402,20 @@ const App = (() => {
       '<div class="row"><span class="k">SP</span><span class="v">'+S.sp+'/'+S.maxSp+'</span></div>',
       '<div class="row"><span class="k">侵蚀</span><span class="v'+(S.ero>=60?' flag':'')+'">'+S.ero+'%</span></div>',
       '<div class="row"><span class="k">击杀</span><span class="v">'+S.kills+'</span></div>',
-      '<div class="row"><span class="k">武器</span><span class="v">+'+S.weaponLevel+'</span><span class="k">属性点</span><span class="v'+(S.ap>0?' flag':'')+'">'+S.ap+'</span></div>',
+      '<div class="row"><span class="k">武器</span><span class="v">+'+S.weaponLevel+'</span><span class="k">属性点</span><span class="v'+(S.statPts>0?' flag':'')+'">'+S.statPts+'</span></div>',
       '<div class="sec">── 技能 ──</div>',
       S.skills.map(s => '<div class="row"><span class="k">·</span><span class="v gray">'+Battle.getActionKey(s)+'</span></div>').join(''),
+      '<div class="sec">── 羁绊 ──</div>' +
+      '<div class="row"><span class="k">雪</span><span class="v">'+(S.trust&&S.trust.yuki||0)+'</span><span class="k">铃</span><span class="v">'+(S.trust&&S.trust.suzu||0)+'</span><span class="k">羽衣</span><span class="v">'+(S.trust&&S.trust.hagoromo||0)+'</span></div>' +
+      '<div class="row"><span class="k">锚点</span><span class="v">'+(S.anchor??50)+'</span>' +
+      (!mapEl || mapEl.classList.contains('hidden') ? '' : '<span class="k">日程</span><span class="v">第'+(S.day||1)+'天 · '+((S.phase==='night')?'夜晚':'白天')+' · AP '+(S.ap||0)+'</span>') +
+      '</div>',
       '<div class="sec">── 道具 ──</div>',
       inv || '<div class="row"><span class="k">·</span><span class="v gray">空</span></div>',
       '<div class="sec">── 材料 ──</div>',
       mats || '<div class="row"><span class="k">·</span><span class="v gray">空</span></div>',
       craftBtns ? '<div class="sec">── 合成 ──</div>' + craftBtns : '',
-      S.ap > 0 ? '<div class="sec">── 加点 ──</div>' +
+      S.statPts > 0 ? '<div class="sec">── 加点 ──</div>' +
         '<div class="row"><button class="save-btn" data-stat="str">力量 +1 (当前 '+(S.stats.str||0)+')</button></div>' +
         '<div class="row"><button class="save-btn" data-stat="vit">体力 +1 (当前 '+(S.stats.vit||0)+')</button></div>' +
         '<div class="row"><button class="save-btn" data-stat="spi">灵力 +1 (当前 '+(S.stats.spi||0)+')</button></div>' +
@@ -392,7 +463,7 @@ const App = (() => {
       b.addEventListener('click', () => {
         if (b.dataset.sys === 'save') { Engine.autoSave(); showDialog('存档已保存。'); }
         else if (b.dataset.sys === 'load') {
-          if (Engine.hasAuto()) { Engine.loadAuto(); showDialog('读档完成。'); togglePanel(false); choiceLock = false; runScene(Engine.getState().scene); }
+          if (Engine.hasAuto()) { Engine.loadAuto(); showDialog('读档完成。'); togglePanel(false); choiceLock = false; if (!continueFromSavedScene(Engine.getState().scene)) { runScene(Engine.getState().scene); } }
           else { showDialog('没有存档。'); }
         }
       });
@@ -420,7 +491,9 @@ const App = (() => {
         Engine.loadAuto();
         showDialog('读档完成。');
         choiceLock = false;
-        runScene(Engine.getState().scene);
+        if (!continueFromSavedScene(Engine.getState().scene)) {
+          runScene(Engine.getState().scene);
+        }
       } else {
         showDialog('没有存档。');
       }
@@ -441,6 +514,7 @@ const App = (() => {
   // ===== 场景执行 =====
   async function runScene(id) {
     if (choiceLock) return;
+    if (typeof id === 'string' && id.indexOf('@map:') === 0) return;
     const S = Engine.getState();
     const scene = Story.get(id);
     if (!scene) { console.error('场景不存在:', id); return; }
@@ -499,7 +573,7 @@ const App = (() => {
       const el = document.createElement('div');
       el.className = 'line';
       storyText.appendChild(el);
-      storyScroll.scrollTop = storyScroll.scrollHeight;
+      followBottom();
       await typeLine(el, lines[i]);
       if (textSkip) { textSkip = false; }
     }
@@ -560,7 +634,10 @@ const App = (() => {
           storyScroll.classList.remove('has-choices');
           if (ch.effect) ch.effect(S);
           if (ch.flag) S.flags[ch.flag] = true;
-          if (ch.chapter !== undefined) S.chapter = ch.chapter;
+          if (ch.chapter !== undefined) {
+            S.chapter = ch.chapter;
+            if (typeof Game !== 'undefined' && Game.setChapter) Game.setChapter(ch.chapter);
+          }
           updateHUD();
           Engine.autoSave();
           if (ch.next) runScene(ch.next);
@@ -573,7 +650,26 @@ const App = (() => {
       await waitForClick();
       choiceLock = false;
       Engine.autoSave();
-      runScene(scene.next);
+      // 自然融入：章节开头自动进入对应章节地图（RPG 自由行动层）
+      const mapChapter = CHAPTER_MAP_ENTRY[scene.next];
+      if (mapChapter && typeof Game !== 'undefined' && Game.explore &&
+          typeof World !== 'undefined' && World.getMap && World.getMap(mapChapter).length) {
+        const S2 = Engine.getState();
+        S2.scene = '@map:' + mapChapter;
+        if (typeof Game !== 'undefined' && Game.setChapter) Game.setChapter(mapChapter);
+        Game.explore(mapChapter);
+        Engine.autoSave();
+      } else {
+        const nextScene = (typeof Story !== 'undefined' && Story.get) ? Story.get(scene.next) : null;
+        const isTail = nextScene && !nextScene.next &&
+          !(nextScene.choices && nextScene.choices.length) && !nextScene.battle;
+        runScene(scene.next).then(() => {
+          if (isTail && typeof Game !== 'undefined' && Game.getPhase && Game.PHASES &&
+              Game.getPhase() === Game.PHASES.DIALOGUE) {
+            Game.returnToMap();
+          }
+        });
+      }
     } else {
       choiceLock = false;
     }
@@ -588,19 +684,14 @@ const App = (() => {
         if (done) return;
         done = true;
         if (timeout) clearTimeout(timeout);
-        document.removeEventListener('pointerdown', onPointer);
+        detach();
         document.removeEventListener('keydown', onKey);
         resolve();
       };
-      const onPointer = (e) => {
-        if (e.target && storyScroll && !storyScroll.contains(e.target)) return;
-        e.preventDefault();
-        finish();
-      };
+      const detach = registerTap(() => finish(), { within: storyScroll });
       const onKey = (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); finish(); }
       };
-      document.addEventListener('pointerdown', onPointer);
       document.addEventListener('keydown', onKey);
       // 兜底：60 秒无操作也推进，避免永远卡住
       timeout = setTimeout(finish, 60000);
@@ -626,10 +717,15 @@ const App = (() => {
       .replace(/\[speaker\]/g, '<span class="speaker">')
       .replace(/\[\/speaker\]/g, '</span>')
       .replace(/\[sa\]/g, '<span class="speaker speaker-a">')
+      .replace(/\[\/sa\]/g, '</span>')
       .replace(/\[sb\]/g, '<span class="speaker speaker-b">')
+      .replace(/\[\/sb\]/g, '</span>')
       .replace(/\[sc\]/g, '<span class="speaker speaker-c">')
+      .replace(/\[\/sc\]/g, '</span>')
       .replace(/\[sd\]/g, '<span class="speaker speaker-d">')
+      .replace(/\[\/sd\]/g, '</span>')
       .replace(/\[se\]/g, '<span class="speaker speaker-e">')
+      .replace(/\[\/se\]/g, '</span>')
       .replace(/\[cg\]/g, '<div class="cg">')
       .replace(/\[\/cg\]/g, '</div>')
       .replace(/\[r18g\]/g, '<div class="r18g">')
@@ -661,6 +757,9 @@ const App = (() => {
       </div>
       <div class="player-bar" style="max-width:110px;font-size:11px;color:var(--fg-dim);padding-top:4px;">
         Lv.${S.level} | 击杀 ${S.kills}
+      </div>
+      <div class="player-bar" style="max-width:200px;">
+        <div class="bar-row bar-xp"><span class="lbl">经验</span><div class="bar"><div class="fill" style="width:${Math.min(100,S.xp/(S.level*40)*100)}%"></div></div><span class="bar-num">${S.xp}/${S.level*40}</span></div>
       </div>`;
     // combo 显示器只创建一次
     let comboEl = document.getElementById('comboDisplay');
@@ -913,7 +1012,7 @@ const App = (() => {
   // ===== 指令处理 =====
   function handleCmd(v) {
     if (v === 'save') { Engine.autoSave(); showDialog('存档已保存。'); }
-    else if (v === 'load') { if (Engine.hasAuto()) { Engine.loadAuto(); choiceLock = false; runScene(Engine.getState().scene); showDialog('读档完成。'); } else { showDialog('没有存档。'); } }
+    else if (v === 'load') { if (Engine.hasAuto()) { Engine.loadAuto(); choiceLock = false; if (!continueFromSavedScene(Engine.getState().scene)) { runScene(Engine.getState().scene); } showDialog('读档完成。'); } else { showDialog('没有存档。'); } }
     else if (v === 'status') { renderStatus(); showDialog('状态已更新。'); }
     else if (v === 'help') { showDialog('指令: save(存档) load(读档) status(状态) help(帮助)'); }
     else if (v === 'clear') { storyText.innerHTML = ''; }
@@ -965,12 +1064,6 @@ const App = (() => {
         resolve();
       };
 
-      const onPointer = (e) => {
-        if (!typing || battleEl && !battleEl.classList.contains('hidden')) return;
-        if (e.target && !(storyScroll.contains(e.target))) return;
-        e.preventDefault();
-        finish();
-      };
       const onKey = (e) => {
         if (!typing) return;
         if (battleEl && !battleEl.classList.contains('hidden')) return;
@@ -979,13 +1072,17 @@ const App = (() => {
           finish();
         }
       };
+      const detach = registerTap(() => {
+        if (!typing) return;
+        if (battleEl && !battleEl.classList.contains('hidden')) return;
+        finish();
+      }, { within: storyScroll });
 
-      document.addEventListener('pointerdown', onPointer);
       document.addEventListener('keydown', onKey);
       const timer = setInterval(() => {
         idx = nextChar(idx);
         el.innerHTML = parseMarkup(raw.slice(0, idx));
-        storyScroll.scrollTop = storyScroll.scrollHeight;
+        followBottom();
         if (idx >= raw.length) finish();
       }, interval);
       skipResolvers.add(finish);
@@ -993,8 +1090,8 @@ const App = (() => {
       function cleanup() {
         clearInterval(timer);
         skipResolvers.delete(finish);
-        document.removeEventListener('pointerdown', onPointer);
         document.removeEventListener('keydown', onKey);
+        detach();
       }
     });
   }
@@ -1008,14 +1105,6 @@ const App = (() => {
         cleanup();
         resolve();
       };
-      const onPointer = (e) => {
-        // 战斗中不打断；只在剧情文字显示阶段生效
-        if (!typing || battleEl && !battleEl.classList.contains('hidden')) return;
-        // 只响应故事区域内的点击，避免与菜单/面板按钮冲突
-        if (e.target && !(storyScroll.contains(e.target))) return;
-        e.preventDefault();
-        finish();
-      };
       const onKey = (e) => {
         if (!typing) return;
         if (battleEl && !battleEl.classList.contains('hidden')) return;
@@ -1024,15 +1113,19 @@ const App = (() => {
           finish();
         }
       };
+      const detach = registerTap(() => {
+        if (!typing) return;
+        if (battleEl && !battleEl.classList.contains('hidden')) return;
+        finish();
+      }, { within: storyScroll });
       const timer = setTimeout(finish, ms);
       skipResolvers.add(finish);
-      document.addEventListener('pointerdown', onPointer);
       document.addEventListener('keydown', onKey);
       function cleanup() {
         clearTimeout(timer);
         skipResolvers.delete(finish);
-        document.removeEventListener('pointerdown', onPointer);
         document.removeEventListener('keydown', onKey);
+        detach();
       }
     });
   }
@@ -1089,6 +1182,32 @@ const App = (() => {
       World.getReachable(ch, curLoc).forEach(l => reachIds.add(l.id));
     }
 
+    // 计算节点包围盒（含节点自身约 120px 宽），把地图偏移到容器 (0,0)，
+    // 配合 overflow 滚动让地图可平移且内容不偏左上角。
+    const NODE_PAD = 120;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    map.forEach(l => {
+      if (l.x == null || l.y == null) return;
+      if (l.x < minX) minX = l.x;
+      if (l.y < minY) minY = l.y;
+      if (l.x > maxX) maxX = l.x;
+      if (l.y > maxY) maxY = l.y;
+    });
+    if (minX === Infinity) { minX = 0; minY = 0; maxX = 0; maxY = 0; }
+    const bboxW = (maxX - minX) + NODE_PAD;
+    const bboxH = (maxY - minY) + NODE_PAD;
+    const bboxTx = 'translate(' + (-minX) + 'px, ' + (-minY) + 'px)';
+    if (nodesEl) {
+      nodesEl.style.width = bboxW + 'px';
+      nodesEl.style.height = bboxH + 'px';
+      nodesEl.style.transform = bboxTx;
+    }
+    if (svg) {
+      svg.style.width = bboxW + 'px';
+      svg.style.height = bboxH + 'px';
+      svg.style.transform = bboxTx;
+    }
+
     map.forEach(l => {
       const btn = document.createElement('button');
       btn.className = 'map-node';
@@ -1103,6 +1222,11 @@ const App = (() => {
         btn.disabled = true;
       }
 
+      if (typeof World !== 'undefined' && World.hasPendingEvent && btn.disabled !== true) {
+        const ph = (dayInfo && dayInfo.phase) || S.phase || 'day';
+        if (World.hasPendingEvent(ch, l.id, ph, S)) btn.classList.add('evt');
+      }
+
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
         if (l.id === curLoc) {
@@ -1114,6 +1238,25 @@ const App = (() => {
       nodesEl.appendChild(btn);
     });
 
+    // 地图显示后自动滚动视口到"当前地点"附近居中
+    if (mapCanvas && curLoc && locById[curLoc] && locById[curLoc].x != null) {
+      const c = locById[curLoc];
+      const px = c.x - minX;
+      const py = c.y - minY;
+      const doScroll = () => {
+        if (!mapCanvas) return;
+        const cw = mapCanvas.clientWidth || 0;
+        const ch = mapCanvas.clientHeight || 0;
+        mapCanvas.scrollLeft = px - cw / 2;
+        mapCanvas.scrollTop = py - ch / 2;
+      };
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(doScroll);
+      } else {
+        doScroll();
+      }
+    }
+
     renderMapFoot(day, phaseName, ap);
   }
 
@@ -1122,7 +1265,7 @@ const App = (() => {
     const S = Engine.getState();
     const ev = World.rollEvent(S.chapter, loc.id, S.phase || 'day', S);
     if (ev) {
-      Game.fireAt(loc.id, 0);
+      Game.fireAt(loc.id);
     } else {
       showDialog('这里没有事可做');
     }
@@ -1134,7 +1277,12 @@ const App = (() => {
     const info = document.createElement('div');
     info.id = 'mapInfo';
     info.className = 'map-desc';
-    info.textContent = '行动点 ' + ap + ' · ' + phaseName + ' · 第' + day + '天';
+    const S = typeof Engine !== 'undefined' && Engine.getState();
+    const ch = S && S.chapter;
+    const goalReady = typeof DayCycle !== 'undefined' && DayCycle.mainReady && S && ch &&
+      DayCycle.mainReady(S, ch, 1);
+    info.textContent = '行动点 ' + ap + ' · ' + phaseName + ' · 第' + day + '天' +
+      (goalReady ? ' · 主线已可推进' : ' · 休息/探索推进日程以解锁主线');
     const actions = document.createElement('div');
     actions.id = 'mapActions';
     actions.className = 'map-actions';
@@ -1150,13 +1298,161 @@ const App = (() => {
     mainBtn.addEventListener('click', () => continueMainline());
     actions.appendChild(restBtn);
     actions.appendChild(mainBtn);
+    // 车站：区域间唯一交通枢纽 —— 提供"旅行"按钮
+    const inStation = typeof Game !== 'undefined' && Game.getCurrentLoc && Game.getCurrentLoc() === 'station';
+    if (inStation) {
+      const travelBtn = document.createElement('button');
+      travelBtn.className = 'map-btn travel-btn';
+      travelBtn.textContent = '旅行';
+      travelBtn.addEventListener('click', () => showTravelPanel());
+      actions.appendChild(travelBtn);
+    }
     mapFoot.appendChild(info);
     mapFoot.appendChild(actions);
   }
 
+  // ===== 地图拖拽平移 =====
+  // 鼠标按住拖动 mapCanvas 平移视口；位移 >10px 视为拖拽，
+  // 拖拽结束后抑制紧随的 click，避免误触发节点按钮。
+  // 触屏由 overflow 原生滚动处理，不拦截、不 preventDefault。
+  function initMapDrag() {
+    if (!mapCanvas) return;
+    mapCanvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      _mapDrag = {
+        id: e.pointerId,
+        x: e.clientX, y: e.clientY,
+        sl: mapCanvas.scrollLeft, st: mapCanvas.scrollTop,
+        moved: false
+      };
+      try { mapCanvas.setPointerCapture(e.pointerId); } catch (err) {}
+      mapCanvas.classList.add('dragging');
+    });
+    mapCanvas.addEventListener('pointermove', (e) => {
+      if (!_mapDrag || e.pointerId !== _mapDrag.id) return;
+      const dx = e.clientX - _mapDrag.x;
+      const dy = e.clientY - _mapDrag.y;
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) _mapDrag.moved = true;
+      if (_mapDrag.moved) {
+        mapCanvas.scrollLeft = _mapDrag.sl - dx;
+        mapCanvas.scrollTop = _mapDrag.st - dy;
+      }
+    });
+    const endDrag = (e) => {
+      if (!_mapDrag || e.pointerId !== _mapDrag.id) return;
+      const wasDrag = _mapDrag.moved;
+      _mapDrag = null;
+      mapCanvas.classList.remove('dragging');
+      if (wasDrag) suppressMapClickOnce();
+    };
+    mapCanvas.addEventListener('pointerup', endDrag);
+    mapCanvas.addEventListener('pointercancel', endDrag);
+  }
+
+  // 拖拽后抑制随后的 click（捕获阶段拦截，阻止其冒泡到节点按钮）
+  function suppressMapClickOnce() {
+    if (!mapCanvas) return;
+    const handler = (e) => {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      mapCanvas.removeEventListener('click', handler, true);
+    };
+    mapCanvas.addEventListener('click', handler, true);
+    setTimeout(() => { if (mapCanvas) mapCanvas.removeEventListener('click', handler, true); }, 150);
+  }
+
+  // ===== 车站旅行面板 =====
+  // 车站是区域间唯一交通枢纽：列出当前章所有可到达区域，选择后消耗行动点传送。
+  function showTravelPanel() {
+    if (typeof Game === 'undefined' || !Game.getCurrentLoc || !mapFoot || !mapFoot.parentNode) return;
+    const S = (typeof Engine !== 'undefined' && Engine.getState) ? Engine.getState() : null;
+    const chapter = (typeof Game !== 'undefined' && Game.getChapter) ? Game.getChapter() : null;
+    const curLoc = Game.getCurrentLoc();
+
+    // 区域列表（World.getDistricts 由后续 A3 任务提供，未就绪则兜底取全地图）
+    let districts = [];
+    if (typeof World !== 'undefined' && World.getDistricts) {
+      districts = World.getDistricts(chapter) || [];
+    } else if (typeof World !== 'undefined' && World.getMap) {
+      districts = World.getMap(chapter) || [];
+    }
+
+    // 旅行行动点消耗（COST.travel 由 A3 在 daycycle.js 中定义，缺省 1）
+    let apCost = 1;
+    if (typeof DayCycle !== 'undefined' && DayCycle.COST && typeof DayCycle.COST.travel === 'number') {
+      apCost = DayCycle.COST.travel;
+    }
+    const apOK = !S || typeof S.ap !== 'number' || S.ap >= apCost;
+
+    // 自定义模态框（沿用 .dialog 遮罩，按钮列表用内联样式，避免改 style.css）
+    const overlay = document.createElement('div');
+    overlay.id = 'travelPanel';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--panel);border:1px solid var(--accent);padding:18px 22px;max-width:420px;width:min(88vw,420px);max-height:72vh;overflow-y:auto;color:var(--fg);font-family:var(--mono);font-size:13px;line-height:1.6;box-shadow:0 0 30px rgba(143,143,255,.25);';
+    let html = '<div style="font-size:15px;color:var(--accent-hi);margin-bottom:10px;">选择目的地</div>';
+    html += '<div style="color:var(--fg-dim);font-size:11px;margin-bottom:12px;">当前：车站前 · 旅行消耗行动点 ' + apCost + (apOK ? '' : '（不足）') + '</div>';
+    if (!apOK) {
+      html += '<div style="color:var(--red-hi);font-size:12px;margin-bottom:10px;">行动点不足</div>';
+    }
+    if (!districts.length) {
+      html += '<div style="color:var(--fg-dim);padding:8px 0;">没有可到达的区域。</div>';
+    }
+    for (const d of districts) {
+      const here = d && d.id === curLoc;
+      const disabled = here || !apOK;
+      html += '<button class="map-btn travel-district" data-did="' + esc(d.id) + '"' +
+        (disabled ? ' disabled' : '') +
+        ' style="display:block;width:100%;text-align:left;margin:6px 0;' +
+        (here ? 'opacity:.4;cursor:default;' : '') +
+        '">' +
+        '<span style="font-size:13px;">' + esc(d.name) + (here ? '（当前）' : '') + '</span>' +
+        (d.desc ? '<span class="node-tag" style="display:block;font-size:10px;color:var(--fg-dim);">' + esc(descSummary(d.desc)) + '</span>' : '') +
+        '</button>';
+    }
+    box.innerHTML = html;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    // 关闭
+    const close = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    const escBtn = document.createElement('button');
+    escBtn.className = 'map-btn';
+    escBtn.textContent = '返回';
+    escBtn.style.cssText = 'display:block;width:100%;margin-top:10px;';
+    escBtn.addEventListener('click', close);
+    box.appendChild(escBtn);
+
+    // 区域按钮：选择 → 关闭面板 → 传送
+    box.querySelectorAll('.travel-district').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        close();
+        const did = btn.dataset.did;
+        if (typeof Game !== 'undefined' && Game.travelToDistrict) {
+          Game.travelToDistrict(did);
+        } else if (typeof Game !== 'undefined' && Game.moveTo) {
+          // 兜底：A3 的 travelToDistrict 未就绪时直接移动
+          if (typeof DayCycle !== 'undefined' && DayCycle.spend && S) DayCycle.spend(S, 'travel');
+          Game.moveTo(did);
+        }
+      });
+    });
+  }
+
   function continueMainline() {
-    if (typeof Game !== 'undefined' && Game.returnToMap) Game.returnToMap();
-    showDialog('主线功能待接入');
+    if (typeof Game === 'undefined' || !Game.getChapter) { showDialog('主线功能待接入'); return; }
+    // 当前章节主线起点场景
+    const MAINLINE_START = { 1: 'chapter1_1', 2: 'chapter2_1', 3: 'chapter3_1' };
+    const start = MAINLINE_START[Game.getChapter()];
+    if (!start) { showDialog('主线功能待接入'); return; }
+    // 直接调 runScene（不经过 runDialogue 的 .then，避免长主线链时过早回到地图）
+    if (typeof Game !== 'undefined' && Game.setPhase && Game.PHASES) {
+      Game.setPhase(Game.PHASES.DIALOGUE);
+    }
+    runScene(start);
   }
 
   function startExplore() {

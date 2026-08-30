@@ -11,6 +11,8 @@ const ASSETS = [
   './core/world.js',
   './core/daycycle.js',
   './core/game.js',
+  './core/data.js',
+  './core/events.js',
   './battle.js',
   './main.js',
   './manifest.webmanifest',

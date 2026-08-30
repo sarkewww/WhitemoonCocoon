@@ -46,7 +46,7 @@ const Engine = (() => {
       materials: {},       // 合成材料 {matId:count}
       recipes: {},         // 已解锁合成配方 {recipeId:true}
       weaponLevel: 1,      // 武器强化等级
-      ap: 0,               // 属性点（未分配）
+      statPts: 0,          // 属性点（未分配）
       stats: { str:1, vit:1, spi:1, agi:1 },  // 力量/体力/灵力/敏捷
       doneScenes: {},      // 已执行过 onEnter 的场景
       log: [],
@@ -92,13 +92,26 @@ const Engine = (() => {
   function migrateState(s) {
     const base = newGame();
     const out = Object.assign({}, base, s);
+    // 旧存档迁移：旧版本把"未分配属性点"存在 S.ap（且无 S.statPts）。
+    // 现在属性点=S.statPts，行动点=S.ap（daycycle 管理），互相解耦。
+    const legacySave = s && typeof s.statPts === 'undefined';
+    if (legacySave) {
+      if (typeof s.ap === 'number') out.statPts = s.ap;   // 旧属性点搬移到 statPts
+      out.ap = 2;                                         // 行动点初始化为白天行动点
+    } else if (typeof out.ap !== 'number' || isNaN(out.ap)) {
+      out.ap = 2;                                         // 缺失/非法则给白天行动点
+    }
+    if (typeof out.statPts !== 'number' || isNaN(out.statPts)) out.statPts = 0;
+    // 日程状态字段补齐（行动点/天数/时段/章节计数器）
+    if (typeof out.day !== 'number' || out.day < 1) out.day = 1;
+    if (!out.phase) out.phase = 'day';
+    if (!out.dayCounters || typeof out.dayCounters !== 'object' || Array.isArray(out.dayCounters)) out.dayCounters = {};
     if (!out.stats) out.stats = { str:1, vit:1, spi:1, agi:1 };
     else { out.stats.str = out.stats.str||1; out.stats.vit = out.stats.vit||1; out.stats.spi = out.stats.spi||1; out.stats.agi = out.stats.agi||1; }
     if (!Array.isArray(out.inventory)) out.inventory = [];
     if (!out.materials || typeof out.materials !== 'object') out.materials = {};
     if (!out.recipes || typeof out.recipes !== 'object') out.recipes = {};
     if (typeof out.weaponLevel !== 'number' || isNaN(out.weaponLevel) || out.weaponLevel < 1) out.weaponLevel = 1;
-    if (typeof out.ap !== 'number' || isNaN(out.ap)) out.ap = 0;
     if (!out.doneScenes || typeof out.doneScenes !== 'object' || Array.isArray(out.doneScenes)) out.doneScenes = {};
     if (!out.trust || typeof out.trust !== 'object') out.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
     else { out.trust.yuki = out.trust.yuki||0; out.trust.suzu = out.trust.suzu||0; out.trust.hagoromo = out.trust.hagoromo||0; }
@@ -235,7 +248,7 @@ const Engine = (() => {
     addItem(rp.out.id, rp.out.count);
     return { ok:true, item:rp.out };
   }
-  function addAP(n) { getState().ap += n; }
+  function addStatPts(n) { getState().statPts += n; }
   function addTrust(char, n) {
     const st = getState();
     if (!st.trust) st.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
@@ -251,8 +264,8 @@ const Engine = (() => {
   function getAnchor() { return getState().anchor ?? 50; }
   function addStat(k, n) {
     const st = getState();
-    if (st.ap < n) return false;
-    st.ap -= n;
+    if (st.statPts < n) return false;
+    st.statPts -= n;
     st.stats[k] = (st.stats[k]||0) + n;
     recalcStats();
     return true;
@@ -299,7 +312,7 @@ const Engine = (() => {
     return {
       hp: st.hp, maxHp: st.maxHp, sp: st.sp, maxSp: st.maxSp,
       atk: st.atk, def: st.def, spd: st.spd,
-      level: st.level, ap: st.ap, stats: st.stats, weaponLevel: st.weaponLevel,
+      level: st.level, statPts: st.statPts, stats: st.stats, weaponLevel: st.weaponLevel,
       ero: st.ero,
     };
   }
@@ -325,7 +338,7 @@ const Engine = (() => {
     addItem, hasItem, removeItem,
     addMaterial, hasMaterial, removeMaterial,
     unlockRecipe, hasRecipe, craftRecipe,
-    addAP, addStat, recalcStats, upgradeWeapon, getStats,
+    addStatPts, addStat, recalcStats, upgradeWeapon, getStats,
     addTrust, getTrust, getTrustAll,
     addAnchor, getAnchor,
   };

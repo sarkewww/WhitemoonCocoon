@@ -18,8 +18,17 @@ const Engine = getEngine();
 
 // 测试
 const results = [];
+const asyncTests = [];
 function t(name, fn) {
-  try { fn(); results.push(['PASS', name]); }
+  try {
+    const r = fn();
+    if (r && typeof r.then === 'function') {
+      asyncTests.push(r.then(() => { results.push(['PASS', name]); })
+        .catch(e => { results.push(['FAIL', name, e.message]); }));
+    } else {
+      results.push(['PASS', name]);
+    }
+  }
   catch(e) { results.push(['FAIL', name, e.message]); }
 }
 
@@ -211,7 +220,86 @@ t('core.Game explore/moveTo 纯逻辑', () => {
   if (Game.getCurrentLoc() !== 's_b') throw new Error('moveTo 相邻移动失败');
 });
 
-// ---- 汇总输出（移至文件末尾，确保所有测试已注册）----
-results.forEach(r => console.log(r.join(' | ')));
-const failed = results.filter(r => r[0] === 'FAIL');
-console.log(failed.length === 0 ? '\nALL TESTS PASSED' : '\n'+failed.length+' FAILED');
+// ============================================================================
+// 追加块：Data + Events 模块加载测试
+// 加载链：engine -> story -> enemies -> story-data
+//         -> core/world -> core/daycycle -> core/game -> core/data -> core/events
+// ============================================================================
+
+// 加载 core/data.js（IIFE，导出 window.Data + module.exports，此处用 new Function 取闭包值）
+const dataSrc = fs.readFileSync(path.join(__dirname, 'core', 'data.js'), 'utf8');
+const Data = new Function(dataSrc + '\n return Data;')();
+global.Data = Data;
+
+// 加载 core/events.js
+const eventsSrc = fs.readFileSync(path.join(__dirname, 'core', 'events.js'), 'utf8');
+const Events = new Function(eventsSrc + '\n return Events;')();
+global.Events = Events;
+
+// mock window.ENEMIES（Data.getEnemy 引用该全局）
+global.ENEMIES = require(path.join(__dirname, 'enemies.js')).ENEMIES;
+
+t('core.Data getItem/getMaterial/getRecipe', () => {
+  const pot = Data.getItem('potion');
+  if (!pot || pot.name !== '魂愈药水') throw new Error('potion 查询失败');
+  const mat = Data.getMaterial('dark_crystal');
+  if (!mat || mat.name !== '暗蚀结晶') throw new Error('dark_crystal 查询失败');
+  const rcp = Data.getRecipe('r_potion');
+  if (!rcp || !rcp.cost || rcp.out.id !== 'potion') throw new Error('r_potion 查询失败');
+  if (Data.getItem('nope') !== null) throw new Error('不存在物品应返回 null');
+});
+
+t('core.Data getSkill/getEnemy', () => {
+  const sk = Data.getSkill('strike');
+  if (!sk || sk.name !== '净化斩' || sk.mult !== 1.0) throw new Error('strike 查询失败');
+  const en = Data.getEnemy('spider1');
+  if (!en || en.id !== 'spider1' || en.name !== '织网之魔') throw new Error('spider1 应引用 ENEMIES');
+  if (en !== global.ENEMIES.spider1) throw new Error('应返回同一引用');
+});
+
+t('core.Data getDistrict 从 World 读取区域', () => {
+  // World.getDistricts 已由 core/world.js 提供；无 district 地图时 getDistrict 返回 null
+  const d = Data.getDistrict(100, 'some_district'); // smoke 章节100 地图无 district
+  if (d !== null) throw new Error('无 district 应返回 null');
+});
+
+t('core.Events checkCondition 基础条件', () => {
+  const S = { flags: { ok: true }, vars: { n: 3 }, trust: { a: 2 }, ero: 20, anchor: 55, inventory: [] };
+  if (!Events.checkCondition({ flag: 'ok' }, S)) throw new Error('flag=true 应通过');
+  if (!Events.checkCondition({ noFlag: 'x' }, S)) throw new Error('noFlag 应通过');
+  if (!Events.checkCondition({ var: 'n', value: 3 }, S)) throw new Error('var 应通过');
+  if (!Events.checkCondition({ trust: 'a', value: 2 }, S)) throw new Error('trust 应通过');
+  if (!Events.checkCondition({ ero: 20 }, S)) throw new Error('ero 应通过');
+  if (!Events.checkCondition({ anchor: 55 }, S)) throw new Error('anchor 应通过');
+  if (!Events.checkCondition(null, S)) throw new Error('null 条件应通过');
+});
+
+t('core.Events worldEventToCommands 转换', () => {
+  const cmds = Events.worldEventToCommands({ scene: 's1', enemy: 'spider1', next: 'n1', lose: 'l1' });
+  if (cmds.length !== 2 || cmds[0].type !== Events.CMD.DIALOGUE || cmds[1].type !== Events.CMD.BATTLE) {
+    throw new Error('转换命令错误');
+  }
+});
+
+t('core.Events registerCommon + CALL 执行', () => {
+  Events.registerCommon('smoke_common', [
+    { type: Events.CMD.SWITCH, flag: 'smoke_ok', value: true },
+    { type: Events.CMD.DIALOGUE, scene: 'smoke_dlg' },
+  ]);
+  let called = 0;
+  const ctx = {
+    getState: () => Engine.newGame(),
+    runStory: async () => { called++; },
+  };
+  return Events.process([{ type: Events.CMD.CALL, event: 'smoke_common' }], ctx).then(() => {
+    if (called !== 1) throw new Error('公共事件应被调用 1 次，实际 '+called);
+  });
+});
+
+// ---- 汇总输出（等待 async 测试完成，确保 ALL TESTS PASSED 输出）----
+Promise.all(asyncTests).then(() => {
+  results.forEach(r => console.log(r.join(' | ')));
+  const failed = results.filter(r => r[0] === 'FAIL');
+  console.log(failed.length === 0 ? '\nALL TESTS PASSED' : '\n'+failed.length+' FAILED');
+  process.exit(failed.length === 0 ? 0 : 1);
+});

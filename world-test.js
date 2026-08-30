@@ -38,9 +38,20 @@ const Game = require(path.join(dir, 'core', 'game.js'));
 global.Game = Game;
 
 // ---- 测试基建（照抄 smoke-test.js 断言风格）----
+// 支持 async 测试（Events.process 是 async）：返回 Promise 的测试收集到 asyncTests，
+// 由末尾 Promise.all 统一等待后再输出结果。
 const results = [];
+const asyncTests = [];
 function t(name, fn) {
-  try { fn(); results.push(['PASS', name]); }
+  try {
+    const r = fn();
+    if (r && typeof r.then === 'function') {
+      asyncTests.push(r.then(() => { results.push(['PASS', name]); })
+        .catch(e => { results.push(['FAIL', name, e.message]); }));
+    } else {
+      results.push(['PASS', name]);
+    }
+  }
   catch(e) { results.push(['FAIL', name, e.message]); }
 }
 
@@ -326,7 +337,164 @@ t('Game.getLoc 取当前章节地点', () => {
   if (!loc || loc.id !== 'loc_b') throw new Error('getLoc 应查到 loc_b');
 });
 
-results.forEach(r => console.log(r.join(' | ')));
-const failed = results.filter(r => r[0] === 'FAIL');
-console.log(failed.length === 0 ? '\nALL TESTS PASSED' : '\n'+failed.length+' FAILED');
-process.exit(failed.length === 0 ? 0 : 1);
+// ============================================================================
+// 追加块：区域感知（district/车站枢纽）+ Data + Events
+// 加载链：engine -> story -> core/world -> core/daycycle -> core/game
+//         -> core/data -> core/events
+// ============================================================================
+
+// ---- 加载 core/data.js 与 core/events.js（new Function，与顶部各模块同手法）----
+const dataCode = fs.readFileSync(path.join(dir, 'core', 'data.js'), 'utf8');
+const Data = new Function(dataCode + '\n return Data;')();
+global.Data = Data;
+
+const eventsCode = fs.readFileSync(path.join(dir, 'core', 'events.js'), 'utf8');
+const Events = new Function(eventsCode + '\n return Events;')();
+global.Events = Events;
+
+// ==================== 区域感知测试（章节 2 专用带 district 地图） ====================
+// 区域：station_area 车站区 / north_area 北区（2 个地点）/ east_area 东区（2 个地点）
+//       south_area 孤岛（无车站连接，验证被车站路由排除）
+World.defineMap(2, [
+  { id: 'station', name: '车站', district: 'station_area', conns: ['north', 'east'] },
+  { id: 'north', name: '北区入口', district: 'north_area', conns: ['station', 'north2'] },
+  { id: 'north2', name: '北区深处', district: 'north_area', conns: ['north'] },
+  { id: 'east', name: '东区入口', district: 'east_area', conns: ['station', 'east2'] },
+  { id: 'east2', name: '东区深处', district: 'east_area', conns: ['east'] },
+  { id: 'isolated', name: '孤岛', district: 'south_area', conns: [] },
+]);
+
+t('World.getDistricts 返回区域列表（首次出现顺序）', () => {
+  const ds = World.getDistricts(2);
+  if (ds.map(d => d.id).join(',') !== 'station_area,north_area,east_area,south_area') {
+    throw new Error('区域列表应为 station_area,north_area,east_area,south_area，实际 '+ds.map(d=>d.id).join(','));
+  }
+  if (World.getDistricts(999).length !== 0) throw new Error('未注册章节应返回 []');
+});
+
+t('World.getLocationsInDistrict 返回该区域所有地点', () => {
+  const ids = World.getLocationsInDistrict(2, 'north_area').map(l => l.id).sort();
+  if (ids.join(',') !== 'north,north2') throw new Error('north_area 应为 [north,north2]，实际 '+ids.join(','));
+  if (World.getLocationsInDistrict(2, 'nope').length !== 0) throw new Error('未知区域应返回 []');
+});
+
+t('World.getStation 返回车站枢纽', () => {
+  const st = World.getStation(2);
+  if (!st || st.id !== 'station') throw new Error('车站应为 station');
+  if (World.getStation(999) !== null) throw new Error('未注册章节应返回 null');
+});
+
+t('World.getReachable 区域内返回相邻 + 车站', () => {
+  // north 同区域相邻 north2，另加车站
+  const ids = World.getReachable(2, 'north').map(l => l.id).sort();
+  if (ids.join(',') !== 'north2,station') throw new Error('north 可达应为 [north2,station]，实际 '+ids.join(','));
+  // 跨区域地点（east）不应出现在可达中
+  if (ids.indexOf('east') !== -1) throw new Error('跨区域地点不应直接可达');
+});
+
+t('World.getReachable 车站返回各区域入口节点', () => {
+  const ids = World.getReachable(2, 'station').map(l => l.id).sort();
+  // 入口：north（north_area 直连车站）、east（east_area 直连车站）
+  // isolated（south_area）不连车站、station_area 自身，均排除
+  if (ids.join(',') !== 'east,north') throw new Error('车站可达应为 [east,north]，实际 '+ids.join(','));
+});
+
+t('World.getReachable 无连接孤岛仍可达车站', () => {
+  const ids = World.getReachable(2, 'isolated').map(l => l.id);
+  // 非车站地点总是返回车站；同区域无相邻
+  if (ids.join(',') !== 'station') throw new Error('isolated 可达应为 [station]，实际 '+ids.join(','));
+});
+
+// ==================== Data 测试（core/data.js） ====================
+t('Data.getItem 返回物品对象', () => {
+  const item = Data.getItem('potion');
+  if (!item || item.name !== '魂愈药水' || item.kind !== 'heal') throw new Error('potion 查询失败');
+  if (Data.getItem('nope') !== null) throw new Error('不存在物品应返回 null');
+});
+
+t('Data.getMaterial 返回材料对象', () => {
+  const mat = Data.getMaterial('dark_crystal');
+  if (!mat || mat.name !== '暗蚀结晶' || mat.price !== 50) throw new Error('dark_crystal 查询失败');
+  if (Data.getMaterial('nope') !== null) throw new Error('不存在材料应返回 null');
+});
+
+t('Data.getRecipe 返回配方对象', () => {
+  const rcp = Data.getRecipe('r_potion');
+  if (!rcp || rcp.name !== '调和魂愈药水') throw new Error('r_potion 查询失败');
+  if (!rcp.cost || !rcp.out || rcp.out.id !== 'potion') throw new Error('配方应含 cost/out 且产出 potion');
+  if (Data.getRecipe('nope') !== null) throw new Error('不存在配方应返回 null');
+});
+
+t('Data.getSkill 返回技能对象', () => {
+  const sk = Data.getSkill('strike');
+  if (!sk || sk.name !== '净化斩' || sk.kind !== 'physical' || sk.mult !== 1.0) throw new Error('strike 查询失败');
+  if (Data.getSkill('nope') !== null) throw new Error('不存在技能应返回 null');
+});
+
+t('Data.getEnemy 引用 enemy 对象（mock window.ENEMIES）', () => {
+  global.ENEMIES = { spider1: { id: 'spider1', name: '织网之魔' } };
+  const en = Data.getEnemy('spider1');
+  if (!en || en.id !== 'spider1' || en.name !== '织网之魔') throw new Error('spider1 应引用 ENEMIES 对象');
+  if (en !== global.ENEMIES.spider1) throw new Error('应返回同一引用，而非拷贝');
+  delete global.ENEMIES;
+  if (Data.getEnemy('spider1') !== null) throw new Error('无 ENEMIES 时应返回 null');
+});
+
+// ==================== Events 测试（core/events.js） ====================
+t('Events.registerCommon 注册公共事件并被 CALL 执行', () => {
+  Events.registerCommon('ev_public_1', [
+    { type: Events.CMD.DIALOGUE, scene: 'pub_scene' },
+    { type: Events.CMD.SWITCH, flag: 'pub_flag', value: true },
+  ]);
+  let sceneId = null;
+  const ctx = {
+    getState: () => Engine.newGame(),
+    runStory: async (sc) => { sceneId = sc; },
+  };
+  return Events.process([{ type: Events.CMD.CALL, event: 'ev_public_1' }], ctx).then(() => {
+    if (sceneId !== 'pub_scene') throw new Error('公共事件 DIALOGUE 未被调用，sceneId='+sceneId);
+  });
+});
+
+t('Events.checkCondition 各类条件', () => {
+  const S = {
+    flags: { a: true }, vars: { x: 5 },
+    trust: { taro: 3 }, ero: 30, anchor: 60,
+    inventory: [{ id: 'potion' }],
+  };
+  if (!Events.checkCondition({ flag: 'a' }, S)) throw new Error('flag=true 应通过');
+  if (Events.checkCondition({ flag: 'b' }, S)) throw new Error('flag=b 不存在应不通过');
+  if (!Events.checkCondition({ noFlag: 'b' }, S)) throw new Error('noFlag=b 应通过');
+  if (Events.checkCondition({ noFlag: 'a' }, S)) throw new Error('noFlag=a 存在应不通过');
+  if (!Events.checkCondition({ var: 'x', value: 5 }, S)) throw new Error('var x>=5 应通过');
+  if (Events.checkCondition({ var: 'x', value: 10 }, S)) throw new Error('var x>=10 应不通过');
+  if (!Events.checkCondition({ trust: 'taro', value: 3 }, S)) throw new Error('trust taro>=3 应通过');
+  if (Events.checkCondition({ trust: 'taro', value: 5 }, S)) throw new Error('trust taro>=5 应不通过');
+  if (!Events.checkCondition({ ero: 30 }, S)) throw new Error('ero>=30 应通过');
+  if (Events.checkCondition({ ero: 50 }, S)) throw new Error('ero>=50 应不通过');
+  if (!Events.checkCondition({ anchor: 60 }, S)) throw new Error('anchor>=60 应通过');
+  if (!Events.checkCondition({ item: 'potion' }, S)) throw new Error('有 potion 应通过');
+  if (Events.checkCondition({ item: 'ether' }, S)) throw new Error('无 ether 应不通过');
+  if (!Events.checkCondition({ custom: s => s.flags.a }, S)) throw new Error('custom 应通过');
+  if (!Events.checkCondition(null, S)) throw new Error('null 条件应通过');
+});
+
+t('Events.worldEventToCommands 转换 World 事件', () => {
+  const cmds = Events.worldEventToCommands({ scene: 'some_scene', enemy: 'spider1', next: 'after_battle', lose: 'game_over' });
+  if (cmds.length !== 2) throw new Error('应生成 2 条命令，实际 '+cmds.length);
+  if (cmds[0].type !== Events.CMD.DIALOGUE || cmds[0].scene !== 'some_scene') throw new Error('首条应为 DIALOGUE');
+  if (cmds[1].type !== Events.CMD.BATTLE || cmds[1].enemy !== 'spider1' || cmds[1].next !== 'after_battle' || cmds[1].lose !== 'game_over') {
+    throw new Error('次条应为 BATTLE 且含 next/lose，实际 '+JSON.stringify(cmds[1]));
+  }
+  const only = Events.worldEventToCommands({ scene: 'just_dialog' });
+  if (only.length !== 1 || only[0].type !== Events.CMD.DIALOGUE) throw new Error('无 enemy 应只生成 DIALOGUE');
+  if (Events.worldEventToCommands({}).length !== 0) throw new Error('空事件应生成空命令');
+});
+
+// ---- 汇总输出（等待 async 测试完成）----
+Promise.all(asyncTests).then(() => {
+  results.forEach(r => console.log(r.join(' | ')));
+  const failed = results.filter(r => r[0] === 'FAIL');
+  console.log(failed.length === 0 ? '\nALL TESTS PASSED' : '\n'+failed.length+' FAILED');
+  process.exit(failed.length === 0 ? 0 : 1);
+});
