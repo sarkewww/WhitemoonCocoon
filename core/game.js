@@ -36,6 +36,15 @@ const Game = (() => {
   const DAILY_EVENT_LIMIT = 2;
   // 各章节主线起点场景
   const MAINLINE_START = { 1: 'chapter1_1', 2: 'chapter2_1', 3: 'chapter3_1' };
+  // 主线推进断点序列（每段推进一步，到达断点后回地图）。
+  // 末段无强制断点，自然推进到章末地图入口（CHAPTER_MAP_ENTRY 拦截 chapterX_1）。
+  const MAINLINE_STEPS = {
+    1: ['chapter1_4', 'chapter1_8', 'chapter1_12'],
+    2: ['chapter2_4', 'chapter2_8', 'ch2_gate_1'],
+    3: ['chapter3_5', 'chapter3_7', 'chapter3_9'],
+  };
+  // 主线推进边界标志（runScene 遇边界场景后停止自动连播，返回地图）
+  let mainlineBoundary = null;
 
   function register(v) { Object.assign(view, v); }
 
@@ -120,8 +129,8 @@ const Game = (() => {
     }
     currentLoc = locId;
     renderMap();
-    // 移动后尝试触发地点事件
-    tryFireEvent();
+    // 移动后尝试触发地点事件（移动与事件合一扣 1 AP，事件不再额外扣）
+    tryFireEvent({ bundled: true });
     return true;
   }
 
@@ -147,8 +156,8 @@ const Game = (() => {
     const entry = locs[0];
     currentLoc = typeof entry === 'string' ? entry : entry.id;
     renderMap();
-    // 抵达后尝试触发入口节点事件
-    tryFireEvent();
+    // 抵达后尝试触发入口节点事件（交通与事件合一扣 1 AP，事件不再额外扣）
+    tryFireEvent({ bundled: true });
     return true;
   }
 
@@ -197,17 +206,21 @@ const Game = (() => {
   }
 
   // 触发当前地点的可触发事件（白天/夜晚按当前时段）
-  function tryFireEvent() {
+  // opts.bundled=true：由 moveTo/travelToDistrict 触发的"抵达事件"，
+  // 移动/交通已扣 1 AP（explore/travel），该事件不再额外扣（移动与事件合一扣 1 AP）。
+  function tryFireEvent(opts) {
     syncFromState();
     const S = Engine.getState();
     const ev = typeof World !== 'undefined' && World.rollEvent(chapter, currentLoc, S.phase || 'day', S);
     if (!ev) return false;
     // 每日限量：once:false 的重复事件超限则不触发
     if (!eventLimitOK(S, ev).ok) return false;
-    // 触发事件消耗行动点（战斗 fight / 对话支线 chat）
-    if (!chargeForEvent(S, ev)) return false;
+    // 触发事件消耗行动点（战斗 fight / 对话支线 chat）；bundled 抵达事件不再额外扣
+    if (!(opts && opts.bundled) && !chargeForEvent(S, ev)) return false;
     // once:false 事件每日限量记账（对话/命令/战斗通用）
     recordEventCount(S, ev);
+    // 支线事件 flag：触发即置位，与主线菜单共享同一防重开关
+    if (ev.flag) S.flags[ev.flag] = true;
     const done = S.doneScenes || {};
     // Events 命令事件（core/events.js 解释器执行 commands 序列）
     if (ev.commands && Array.isArray(ev.commands) && typeof Events !== 'undefined' && Events.process) {
@@ -272,6 +285,8 @@ const Game = (() => {
     if (!chargeForEvent(S, ev)) return false;
     // once:false 事件每日限量记账（对话/命令/战斗通用）
     recordEventCount(S, ev);
+    // 支线事件 flag：触发即置位，与主线菜单共享同一防重开关
+    if (ev.flag) S.flags[ev.flag] = true;
     const done = S.doneScenes || {};
     // Events 命令事件（core/events.js 解释器执行 commands 序列）
     if (ev.commands && Array.isArray(ev.commands) && typeof Events !== 'undefined' && Events.process) {
@@ -332,6 +347,49 @@ const Game = (() => {
     return Promise.resolve(view.runStory ? view.runStory(sceneId) : undefined);
   }
 
+  // 主线进门状态初始化（兜底旧存档/engine.js migrateState 未覆盖的字段）
+  function ensureMainline(S) {
+    if (!S.mainline || typeof S.mainline !== 'object' || Array.isArray(S.mainline)) S.mainline = {};
+    return S.mainline;
+  }
+
+  // 主线推进边界管理
+  function setMainlineBoundary(sceneId) { mainlineBoundary = sceneId || null; }
+  function isMainlineBoundary(sceneId) { return !!mainlineBoundary && sceneId === mainlineBoundary; }
+  function clearMainlineBoundary() { mainlineBoundary = null; }
+
+  // 获取当前主线进度（场景 id）
+  function getMainlineProgress(chapter) {
+    const S = Engine.getState();
+    ensureMainline(S);
+    return S.mainline[chapter] || null;
+  }
+
+  // 沿主线场景链获取下一场景（用于断点后恢复起点）
+  function nextMainlineScene(sceneId) {
+    if (typeof Story === 'undefined' || !Story.get) return null;
+    const sc = Story.get(sceneId);
+    if (!sc) return null;
+    if (sc.next) return sc.next;
+    if (sc.choices && sc.choices.length) {
+      const choices = typeof sc.choices === 'function' ? sc.choices() : sc.choices;
+      if (choices[0] && choices[0].next) return choices[0].next;
+    }
+    if (sc.battle && sc.battle.next) return sc.battle.next;
+    return null;
+  }
+
+  // 推进到下一步所需章内天数 = 下一步索引 + 1（每步需多待一天，门槛逐步生效）
+  function mainlineStepRequireDays(chapter) {
+    const S = Engine.getState();
+    const prog = S.mainline || {};
+    const steps = MAINLINE_STEPS[chapter] || [];
+    const cur = prog[chapter];
+    let idx = steps.indexOf(cur);
+    if (idx < 0) idx = -1;
+    return idx + 2; // 第一步(nextIdx=0)需 1 天
+  }
+
   // ---- 日程 ----
   // 主线是否解锁：基于章内已过天数（dayCounters[chapter] >= requireDays）。
   // 返回 { unlocked, chapter, requireDays, currentDays, need }；need 为还需经过的天数。
@@ -347,36 +405,80 @@ const Game = (() => {
     return { unlocked, chapter: ch, requireDays: req, currentDays: current, need: Math.max(0, req - current) };
   }
 
-  // 主线推进入口：未到天数门槛时返回未解锁状态（不硬崩溃），已解锁则进入该章主线起点场景。
+  // 主线门槛（含渐进天数）：供 UI/continueMainline 在调用 advanceMainline 前判断
+  function getMainlineGate(chapter) {
+    const ch = typeof chapter === 'number' ? chapter : (Engine.getState().chapter || 0);
+    const S = Engine.getState();
+    ensureMainline(S);
+    const req = mainlineStepRequireDays(ch);
+    return isMainlineUnlocked(ch, req);
+  }
+
+  // 主线推进入口：每次推进一段（从上次进度到下一断点），到达断点后回地图。
+  // 未到天数门槛时返回未解锁状态，不硬崩溃。
   function advanceMainline(chapter, requireDays) {
     const st = isMainlineUnlocked(chapter, requireDays);
     if (!st.unlocked) {
       view.log && view.log('主线尚未解锁：本日行程还需 ' + st.need + ' 天才可推进。');
       return st;
     }
-    const start = MAINLINE_START[st.chapter];
-    if (!start) {
+    const ch = st.chapter;
+    const S = Engine.getState();
+    ensureMainline(S);
+    const steps = MAINLINE_STEPS[ch] || [];
+    const start = MAINLINE_START[ch];
+    if (!steps.length) {
+      // 无断点定义的章节：保持旧行为从起点播放
+      if (!start) { view.log && view.log('该章节还没有主线剧情。'); return Object.assign({}, st, { scene: null }); }
+      S.mainline[ch] = S.mainline[ch] || start;
+      runDialogue(start);
+      return Object.assign({}, st, { scene: start });
+    }
+    const cur = S.mainline[ch];
+    let completedIdx = cur ? steps.indexOf(cur) : -1; // 上次完成的断点索引，-1 = 未开始
+    const nextIdx = completedIdx + 1;                 // 本段推进到的断点索引
+    if (nextIdx >= steps.length) {
+      view.log && view.log('本章主线已全部推进完毕。');
+      return Object.assign({}, st, { scene: null, completed: true, progress: cur || steps[steps.length - 1] });
+    }
+    const target = steps[nextIdx];                     // 本段的目标断点场景
+    const isLastSegment = (nextIdx === steps.length - 1);
+    // 本段起点：首次从章起点；否则从上一断点的下一场景继续
+    const startScene = completedIdx >= 0
+      ? (nextMainlineScene(steps[completedIdx]) || steps[completedIdx])
+      : MAINLINE_START[ch];
+    if (!startScene) {
       view.log && view.log('该章节还没有主线剧情。');
       return Object.assign({}, st, { scene: null });
     }
-    runDialogue(start);
-    return Object.assign({}, st, { scene: start });
+    // 记录进度到目标断点；末段记录断言即可（之后自然走到章末地图入口）
+    S.mainline[ch] = target;
+    setMainlineBoundary(isLastSegment ? null : target);
+    runDialogue(startScene);
+    return Object.assign({}, st, { scene: startScene, progress: target, completed: false });
   }
 
   function passTime() {
     syncFromState();
     const S = Engine.getState();
     const res = typeof DayCycle !== 'undefined' && DayCycle.advance(S);
+    // 每日休息次数用尽：不推进、不回血，返回受限信息供 UI 提示
+    if (res && res.ok === false) {
+      Engine.setState(S);
+      Engine.autoSave();
+      view.log && view.log(`今日已休息 ${res.limit} 次，无法继续推进时段（明天再来）。`);
+      return res;
+    }
     Engine.setState(S);
     Engine.autoSave();
-    // 状态恢复：夜晚恢复 25%，次日白天恢复 60%
+    // 状态恢复（削减）：夜晚恢复 10%，次日白天恢复 20%
     if (res) {
       if (res.to === 'night') {
-        S.hp = Math.min(S.hp + Math.round(S.maxHp * 0.25), S.maxHp);
-        S.sp = Math.min(S.sp + Math.round(S.maxSp * 0.25), S.maxSp);
+        S.hp = Math.min(S.hp + Math.round(S.maxHp * 0.1), S.maxHp);
+        S.sp = Math.min(S.sp + Math.round(S.maxSp * 0.1), S.maxSp);
       } else if (res.to === 'day') {
-        S.hp = Math.min(S.hp + Math.round(S.maxHp * 0.6), S.maxHp);
-        S.sp = Math.min(S.sp + Math.round(S.maxSp * 0.6), S.maxSp);
+        S.hp = Math.min(S.hp + Math.round(S.maxHp * 0.2), S.maxHp);
+        S.sp = Math.min(S.sp + Math.round(S.maxSp * 0.2), S.maxSp);
       }
     }
     view.log && view.log(`已到${res && res.to === 'day' ? '第 ' + res.day + ' 天 · 白天' : '夜晚'}。`);
@@ -412,6 +514,9 @@ const Game = (() => {
     tryFireEvent, fireAt, runDialogue, endDialogue, goto,
     passTime, renderMap, returnToMap, getCurrentLoc, getLoc, syncFromState,
     isMainlineUnlocked, advanceMainline,
+    ensureMainline, getMainlineProgress, nextMainlineScene,
+    setMainlineBoundary, isMainlineBoundary, clearMainlineBoundary,
+    mainlineStepRequireDays, getMainlineGate,
   };
 })();
 

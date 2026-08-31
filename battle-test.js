@@ -160,7 +160,153 @@ async function run(){
     }
   });
 
-  results.forEach(r=>console.log(r.join(' | ')));
+  // 测试9: 战斗胜利后 money 增加，金额符合公式
+  await t('战斗胜利后 money 增加且符合公式', async () => {
+    const s = Engine.newGame();
+    Engine.setState(s);
+    const before = Engine.getMoney();
+    await Battle.start({
+      enemy: { id:'m9', name:'测试魔物', hp:30, atk:0, def:0, spd:0, xp:20, sprite:['x'] },
+      onWin: async () => {},
+      onLose: async () => {},
+    });
+    const after = Engine.getMoney();
+    const expected = 10 + Math.floor(20 * 0.8);
+    if (after - before !== expected) throw new Error(`money 增量应为 ${expected}，实际 ${after-before}`);
+  });
+
+  // 测试10: 不同 xp 敌人掉落不同金额
+  await t('不同 xp 敌人掉落不同金额', async () => {
+    const s = Engine.newGame();
+    Engine.setState(s);
+    const run = async (xp) => {
+      const before = Engine.getMoney();
+      await Battle.start({
+        enemy: { id:'m', name:'怪', hp:30, atk:0, def:0, spd:0, xp, sprite:['x'] },
+        onWin: async () => {},
+        onLose: async () => {},
+      });
+      return Engine.getMoney() - before;
+    };
+    const low = await run(20);
+    const high = await run(100);
+    if (low === high) throw new Error('不同 xp 敌人应掉不同金额');
+    if (low !== 10 + Math.floor(20*0.8)) throw new Error(`low 金额 ${low} 不符 ${10+Math.floor(20*0.8)}`);
+    if (high !== 10 + Math.floor(100*0.8)) throw new Error(`high 金额 ${high} 不符 ${10+Math.floor(100*0.8)}`);
+  });
+
+  // 测试9: 高 critChance 提升暴击率
+  t('高 critChance 提升暴击率', () => {
+    const s = Engine.getState();
+    s.critChance = 0.9;
+    const { computeDamage } = Battle;
+    const origRandom = Math.random;
+    try {
+      Math.random = () => 0.5;   // 0.5 < 0.9 → 必暴击
+      let crits = 0, total = 200;
+      for (let i=0;i<total;i++) {
+        const r = computeDamage({atk:12, level:1}, {def:4}, {mult:1, isSkill:false});
+        if (r.crit) crits++;
+      }
+      if (crits !== total) throw new Error('critChance=0.9 时应全部暴击，实际 '+crits+'/'+total);
+    } finally {
+      Math.random = origRandom;
+      s.critChance = 0;
+    }
+  });
+
+  // 测试10: 默认 critChance=0 保留基础暴击（不破坏旧伤害）
+  t('默认 critChance=0 保留基础暴击', () => {
+    const s = Engine.getState();
+    s.critChance = 0;
+    const { computeDamage } = Battle;
+    const origRandom = Math.random;
+    try {
+      Math.random = () => 0.07;   // < 0.08 非技能基础暴击
+      const r1 = computeDamage({atk:12, level:1}, {def:4}, {mult:1, isSkill:false});
+      if (!r1.crit) throw new Error('critChance=0 时应保留非技能 8% 基础暴击');
+
+      Math.random = () => 0.09;   // > 0.08 且 < 0.12
+      const r2 = computeDamage({atk:12, level:1}, {def:4}, {mult:1, isSkill:false});
+      if (r2.crit) throw new Error('非技能 0.09 不应暴击（基础 8%）');
+
+      Math.random = () => 0.10;   // < 0.12 技能基础暴击
+      const r3 = computeDamage({atk:12, level:1}, {def:4}, {mult:1, isSkill:true});
+      if (!r3.crit) throw new Error('技能 0.10 应暴击（基础 12%）');
+    } finally {
+      Math.random = origRandom;
+      s.critChance = 0;
+    }
+  });
+
+  // 测试11: dmgReduction 减伤生效（unit test on enemyHit）
+  t('dmgReduction 减伤生效', () => {
+    const { enemyHit } = Battle;
+    const noRed = enemyHit(50, 1, 5, false, 0.42, 0);
+    const red = enemyHit(50, 1, 5, false, 0.42, 0.5);
+    if (!(red < noRed)) throw new Error('dmgReduction 应降低伤害: '+red+' vs '+noRed);
+    // 50% 减伤 → 约等于半伤（允许 1 点舍入误差）
+    const half = Math.round(noRed * 0.5);
+    if (Math.abs(red - half) > 1) throw new Error('50% 减伤离半伤偏差过大: '+red+' vs '+half);
+  });
+
+  // 测试12: 默认 dmgReduction=0 不改变伤害
+  t('默认 dmgReduction=0 不改变伤害', () => {
+    const { enemyHit } = Battle;
+    const explicit = enemyHit(50, 1, 5, false, 0.42, 0);
+    const omitted = enemyHit(50, 1, 5, false, 0.42);
+    if (explicit !== omitted) throw new Error('dmgReduction 默认 0 应不改变伤害: '+explicit+' vs '+omitted);
+  });
+
+  // 测试13: guard 时 dmgReduction 叠加
+  t('guard + dmgReduction 叠加', () => {
+    const { enemyHit } = Battle;
+    const guardNoRed = enemyHit(50, 1, 5, true, 0.42, 0);
+    const guardRed = enemyHit(50, 1, 5, true, 0.42, 0.5);
+    if (!(guardRed < guardNoRed)) throw new Error('guard+dmgReduction 应叠加减伤: '+guardRed+' vs '+guardNoRed);
+    // guard 本身已减伤（vs 非 guard）
+    const noGuardNoRed = enemyHit(50, 1, 5, false, 0.42, 0);
+    if (!(guardNoRed < noGuardNoRed)) throw new Error('guard 自身应减伤: '+guardNoRed+' vs '+noGuardNoRed);
+  });
+
+  // 测试14: 集成——敌人回合伤害应用 dmgReduction
+  await t('敌人回合伤害应用 dmgReduction', async () => {
+    const origRandom = Math.random;
+    const origPrompt = App.promptAction;
+    const origLog = App.battleLog;
+    App.battleLog = () => {};  // 静音日志
+
+    // 简化：直接比较 enemyPhase 内 enemyHit 是否传入了 dmgReduction
+    // 通过两场战斗（dmgReduction=0 vs 0.9）对比 damageTaken
+    const scripted = () => 'claw';
+    const enemyCfg = { id:'it', name:'测试', hp:120, atk:100, def:0, spd:1, xp:1, sprite:['x'], scripted };
+
+    let s1 = Engine.newGame();
+    s1.dmgReduction = 0.0;
+    Engine.setState(s1);
+    s1.hp = 100000; s1.maxHp = 100000;
+    Math.random = () => 0.5;
+    await Battle.start({ enemy: enemyCfg, onWin: async ()=>{}, onLose: async ()=>{} });
+    const dmg0 = s1.damageTaken;
+
+    let s2 = Engine.newGame();
+    s2.dmgReduction = 0.9;
+    Engine.setState(s2);
+    s2.hp = 100000; s2.maxHp = 100000;
+    Math.random = () => 0.5;
+    await Battle.start({ enemy: enemyCfg, onWin: async ()=>{}, onLose: async ()=>{} });
+    const dmg9 = s2.damageTaken;
+
+    try {
+      if (dmg0 <= 0) throw new Error('dmgReduction=0 时应受到伤害，实际 '+dmg0);
+      if (dmg9 >= dmg0) throw new Error('dmgReduction=0.9 时应大幅减伤: '+dmg9+' vs '+dmg0);
+      if (dmg9 > dmg0 * 0.3) throw new Error('dmgReduction=0.9 减伤效果不足（>30% 原伤害）: '+dmg9+' vs '+dmg0);
+    } finally {
+      Math.random = origRandom;
+      App.promptAction = origPrompt;
+      App.battleLog = origLog;
+    }
+  });
   const failed = results.filter(r=>r[0]==='FAIL');
   console.log(failed.length===0 ? '\nALL BATTLE TESTS PASSED' : '\n'+failed.length+' FAILED');
   process.exit(failed.length===0?0:1);

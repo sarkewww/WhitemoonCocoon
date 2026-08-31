@@ -93,6 +93,54 @@ t('boot 显示', () => {
   if(byId.boot.classList.contains('hidden')) throw new Error('boot hidden?');
 });
 
+// 技能菜单过滤测试
+t('getActionList 初始仅 strike 可用', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  const acts = App.getActionList();
+  const ids = acts.map(a => a.id);
+  if (ids.includes('pure')) throw new Error('pure 不应出现在初始技能列表');
+  if (ids.includes('erosion')) throw new Error('erosion 不应出现在初始技能列表');
+  if (!ids.includes('strike')) throw new Error('strike 应始终可用');
+  if (!ids.includes('guard')) throw new Error('guard 应始终可用');
+  if (!ids.includes('heal')) throw new Error('heal 应始终可用');
+  if (!ids.includes('ultimate')) throw new Error('ultimate 应始终显示');
+});
+
+t('getActionList 学习 pure 后出现', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  Engine.learnSkill('pure');
+  const acts = App.getActionList();
+  const p = acts.find(a => a.id === 'pure');
+  if (!p) throw new Error('learnSkill pure 后应出现');
+  if (p.desc.indexOf('SP20') === -1) throw new Error('pure desc 应含 SP20');
+});
+
+t('getActionList 学习 erosion 后出现', () => {
+  const s = Engine.newGame();
+  s.sp = 50; s.ero = 0;
+  Engine.setState(s);
+  Engine.learnSkill('erosion');
+  const acts = App.getActionList();
+  const e = acts.find(a => a.id === 'erosion');
+  if (!e) throw new Error('learnSkill erosion 后应出现');
+  if (e.desc.indexOf('侵蚀+8') === -1) throw new Error('erosion desc 应含 侵蚀+8, 实际: '+e.desc);
+  if (e.disable) throw new Error('SP充足时 erosion 应可用');
+  s.sp = 10;
+  if (App.getActionList().find(a => a.id === 'erosion').disable !== true) throw new Error('SP不足时 erosion 应禁用');
+  s.sp = 50; s.ero = 100;
+  if (App.getActionList().find(a => a.id === 'erosion').disable !== true) throw new Error('侵蚀满时 erosion 应禁用');
+});
+
+t('getActionList strike 文案与实际一致', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  const acts = App.getActionList();
+  const st = acts.find(a => a.id === 'strike');
+  if (st.desc.indexOf('SP+5') === -1) throw new Error('strike desc 应为 SP+5, 实际: '+st.desc);
+});
+
 (async () => {
   try {
     Engine.setState(Engine.newGame());

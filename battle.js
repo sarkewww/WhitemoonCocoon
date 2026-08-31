@@ -243,7 +243,13 @@ const Battle = (() => {
   function computeDamage(actor, target, { mult=1, isSkill=false, ignoreDef=false, isCrit=null, skillType=null }={}) {
     let base = actor.atk * mult;
     let crit = isCrit;
-    if (crit === null) crit = Math.random() < (isSkill ? 0.12 : 0.08);
+    if (crit === null) {
+      // 羁绊被动：读 S.critChance（铃=暴击）。0/undefined 视为无加成，回退基础暴击（回归安全）
+      const S = (typeof Engine !== 'undefined' && Engine.getState) ? Engine.getState() : null;
+      const baseCrit = isSkill ? 0.12 : 0.08;
+      const cc = (S && S.critChance) || null;
+      crit = Math.random() < (cc ?? baseCrit);
+    }
     const weakHit = !!(skillType && target && target.weak && skillType === target.weak && WEAK_MULT[skillType]);
     if (weakHit) base *= WEAK_MULT[skillType];
     if (!ignoreDef) base = Math.max(1, base - target.def*0.55);
@@ -254,12 +260,15 @@ const Battle = (() => {
   }
 
   // ---- 敌人→玩家 伤害：百分比 + 线性 混合减伤（让防御在后期仍有收益）----
-  function enemyHit(atk, roll, plDef, guarding, linCoef) {
+  // dmgReduction：羁绊被动减伤（雪=减伤），玩家受击时传入 S.dmgReduction；敌方受击不适用。
+  // guard 时防御加成已在上方 edef/linear 生效，减伤再叠乘，默认 0 不改变原数值。
+  function enemyHit(atk, roll, plDef, guarding, linCoef, dmgReduction=0) {
     const K = 50;
     const edef = guarding ? plDef + 15 : plDef;
     const pct = 1 - edef/(edef + K);
     const linear = plDef * (guarding ? linCoef*2.6 : linCoef);
-    return Math.max(1, Math.round(atk*roll*pct - linear));
+    const raw = atk*roll*pct - linear;
+    return Math.max(1, Math.round(raw * (1 - dmgReduction)));
   }
 
   // ---- 敌人AI ----
@@ -466,7 +475,7 @@ const Battle = (() => {
     }
 
     async function enemyPhase() {
-      const pl = { hp:S.hp, maxHp:S.maxHp, sp:S.sp, maxSp:S.maxSp, atk:S.atk, def:S.def, level:S.level };
+      const pl = { hp:S.hp, maxHp:S.maxHp, sp:S.sp, maxSp:S.maxSp, atk:S.atk, def:S.def, level:S.level, dmgReduction:S.dmgReduction||0 };
       const act = enemyAction(enemy, pl);
       const desc = tacts[act] || '魔物发动攻击';
       UI.battleLog(enemy.name + ' ' + desc, 'info');
@@ -475,21 +484,21 @@ const Battle = (() => {
       let dmg = 0;
       switch(act) {
         case 'claw': {
-          dmg = enemyHit(enemy.atk, 0.85+Math.random()*0.4, pl.def, guarding, 0.42);
+          dmg = enemyHit(enemy.atk, 0.85+Math.random()*0.4, pl.def, guarding, 0.42, pl.dmgReduction);
           break;
         }
         case 'tentacle': {
-          dmg = enemyHit(enemy.atk*1.15, 0.85+Math.random()*0.3, pl.def, guarding, 0.5);
+          dmg = enemyHit(enemy.atk*1.15, 0.85+Math.random()*0.3, pl.def, guarding, 0.5, pl.dmgReduction);
           break;
         }
         case 'bind': {
-          dmg = enemyHit(enemy.atk*0.6, 1, pl.def, false, 0.21);
+          dmg = enemyHit(enemy.atk*0.6, 1, pl.def, false, 0.21, pl.dmgReduction);
           bindTurns = (guarding || bindTurns > 0) ? 0 : 1;   // 上限1回合，防连续软锁
           if (bindTurns) UI.battleLog('触手缠住了她的四肢！ 下回合无法行动！', 'erosion');
           break;
         }
         case 'lifesteal': {
-          dmg = enemyHit(enemy.atk*0.9, 1, pl.def, false, 0.35);
+          dmg = enemyHit(enemy.atk*0.9, 1, pl.def, false, 0.35, pl.dmgReduction);
           const leech = Math.round(dmg*0.5);
           enemy.hp = Math.min(enemy.maxHp, enemy.hp + leech);
           UI.battleLog(enemy.name+' 汲取了 '+leech+' 点生命。', 'erosion');
@@ -497,7 +506,7 @@ const Battle = (() => {
           break;
         }
         case 'erosionBurst': {
-          dmg = enemyHit(enemy.atk*0.7, 1, pl.def, false, 0.14);
+          dmg = enemyHit(enemy.atk*0.7, 1, pl.def, false, 0.14, pl.dmgReduction);
           S.ero = Engine.clamp(S.ero + 3, 0, 100);
           UI.battleLog('侵蚀的气息渗入身体—— 侵蚀 +3！', 'erosion');
           break;
@@ -559,6 +568,9 @@ const Battle = (() => {
         leveled = true;
       }
       if (leveled) UI.battleLog(`升级了！ Lv.${S.level}（属性点 +2）`, 'big');
+      const reward = Math.floor(10 + (enemy.xp||0) * 0.8);
+      Engine.addMoney(reward);
+      UI.battleLog(`获得 ${reward} 金币。`, 'info');
       UI.battleLog(`获得 ${xp} 经验。`, 'info');
       UI.renderBattleBars();
       await wait(500);
@@ -631,7 +643,7 @@ const Battle = (() => {
     FX.stop();
   }
 
-  return { start, stop, FX, Sfx, spawnDmg, wait, makeEnemy, computeDamage, getActionKey,
+  return { start, stop, FX, Sfx, spawnDmg, wait, makeEnemy, computeDamage, enemyHit, getActionKey,
     ITEMS, MATERIALS, RECIPES };
 })();
 

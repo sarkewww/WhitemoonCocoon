@@ -386,11 +386,14 @@ const World = (() => {
       events: [
         {
           id: 'ev3_dream_realm', scene: 'd3_dream_realm', when: 'night', once: true,
+          flag: 'd3_dream_done',
+          cond: (S) => !Engine.flag('d3_dream_done'),
           desc: '异界边缘，羽衣难得在你身边坐下来。「……我一直在想，如果那天被选中的是我，我会不会也像你一样拼命。」',
         },
         {
           id: 'ev3_find_hagoromo', scene: 'ch3_side1', when: 'day', once: true,
-          cond: (S) => !Engine.flag('hagoromo_joined'),
+          flag: 'hagoromo_joined',
+          cond: (S) => !Engine.flag('hagoromo_joined') && !Engine.flag('ch3_side2_done'),
           desc: '异界边缘找到羽衣留下的痕迹——被斩断的触手残骸上，还泛着银白色的魔力残光。',
         },
         {
@@ -407,7 +410,8 @@ const World = (() => {
       events: [
         {
           id: 'ev3_hagoromo_side2', scene: 'ch3_side2', when: 'day', once: true,
-          cond: (S) => (S.trust || {}).hagoromo >= 15,
+          flag: 'ch3_side2_done',
+          cond: (S) => (S.trust || {}).hagoromo >= 15 && !Engine.flag('ch3_side2_done'),
           desc: '你在情感碎片森林里追上羽衣——这一次，你抓住了她的手，很用力，很坚定。',
         },
         {
@@ -424,6 +428,8 @@ const World = (() => {
       events: [
         {
           id: 'ev3_suzu_memory', scene: 'd3_suzu_memory', when: 'night', once: true,
+          flag: 'd3_suzu_done',
+          cond: (S) => !Engine.flag('d3_suzu_done'),
           desc: '循着雨声般的低语来到不动之海——海底封存着铃的记忆。要不要……把它还给她？',
         },
         {
@@ -461,6 +467,8 @@ const World = (() => {
       events: [
         {
           id: 'ev3_prof_truth', scene: 'ch3_side3', when: 'day', once: true,
+          flag: 'ch3_side3_done',
+          cond: (S) => !Engine.flag('ch3_side3_done'),
           desc: '记忆回廊深处，天城教授沉默了很久。「我已经把真相讲给你听了。剩下的——它想自己告诉你。」',
         },
         {

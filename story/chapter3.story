@@ -156,11 +156,12 @@ label chapter3_2
     [n]——但体内的纹路，正在一寸一寸地，替她回答。[/n]
   choices:
     1. 继续前进——深入异界 -> chapter3_3
-    2. 先去找羽衣——她不该独自面对这里 -> ch3_side1 [flag=hagoromo_joined] [cond: !Engine.flag("hagoromo_joined")]
-     3. 在异界边缘稍作休整，整理思绪 -> d3_dream_realm
+    2. 先去找羽衣——她不该独自面对这里 -> ch3_side1 [flag=hagoromo_joined] [cond: !Engine.flag("hagoromo_joined") && !S.flags.ch3_side2_done]
+     3. 在异界边缘稍作休整，整理思绪 -> d3_dream_realm [cond: !S.flags.d3_dream_done]
 
 label d3_dream_realm
   transition
+  onEnter: (s) => { s.flags.d3_dream_done = true; }
   text:
     [n]异界的边缘。[/n]
     [n]那些悬浮的茧在远处静静发光，像一串倒悬的灯笼，沉默地照亮这片不属于任何人的空间。[/n]
@@ -251,6 +252,7 @@ label d3_dream_realm_trust6
 
 label ch3_side1
   transition
+  onEnter: (s) => { s.flags.hagoromo_joined = true; }
   text:
     [n]绫音在异界边缘找到了羽衣的痕迹。[/n]
     [n]那是被斩断的触手残骸，切口干净利落，断面还泛着银白色的魔力残光。[/n]
@@ -328,6 +330,7 @@ label ch3_side1
   next: ch3_side2
 
 label ch3_side2
+  onEnter: (s) => { s.flags.ch3_side2_done = true; }
   text:
   ? if (S) => (S.trust && S.trust.hagoromo >= 15)
     绫音抓住了羽衣的手腕。羽衣的身体僵了一下——不是因为被抓住，而是因为，抓住她的那只手，很用力，很坚定。和资料室里那双犹豫的、不知道该不该靠近自己的手，截然不同。
@@ -784,10 +787,11 @@ label chapter3_5
     [s]习得配方「升华月光圣水」。[/s]
   choices:
     1. 继续前进——直指源茧 -> chapter3_6
-    2. 循着记忆的潮声，走向那片「记忆之海」 -> d3_suzu_memory
+    2. 循着记忆的潮声，走向那片「记忆之海」 -> d3_suzu_memory [cond: !S.flags.d3_suzu_done]
 
 label d3_suzu_memory
   transition
+  onEnter: (s) => { s.flags.d3_suzu_done = true; }
   text:
     [n]异界的深处，有一片不会流动的海。[/n]
     ''
@@ -1080,10 +1084,11 @@ label chapter3_6
   choices:
     1. 「那铃呢——她怎么办？」 -> chapter3_7
     2. 「我准备好了。让我摧毁它。」 -> chapter3_7
-    3. 「……让我看看源茧的真相。」 -> ch3_side3
+    3. 「……让我看看源茧的真相。」 -> ch3_side3 [cond: !S.flags.ch3_side3_done]
 
 label ch3_side3
   transition
+  onEnter: (s) => { s.flags.ch3_side3_done = true; }
   text:
     [n]天城教授沉默了很久。[/n]
     ''

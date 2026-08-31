@@ -12,13 +12,17 @@ const DayCycle = (() => {
   const DAY_AP = 2;        // 白天行动点数
   const NIGHT_AP = 1;      // 夜晚行动点数
 
+  // 每日最多休息次数（自然节奏：白天→夜晚 1 次 + 夜晚→次日 1 次）。
+  // 防刷：限制免费推进时段刷 AP / 每日限量重置。
+  const DAILY_REST_LIMIT = 2;
+
   // 行动点消耗约定
   const COST = {
     explore: 1,   // 探索/移动到地点
     chat: 1,      // 对话/支线
     fight: 1,     // 巡逻/战斗
     craft: 0,     // 合成
-    rest: 0,      // 休息（推进到夜晚/次日）
+    rest: 0,      // 休息（推进到夜晚/次日）——不消耗 AP，但受每日次数限制（DAILY_REST_LIMIT）
     travel: 1,    // 区域交通（车站传送）
   };
 
@@ -29,6 +33,7 @@ const DayCycle = (() => {
     if (typeof S.ap !== 'number') S.ap = S.phase === 'day' ? DAY_AP : NIGHT_AP;
     if (!S.dayCounters) S.dayCounters = {};
     if (!S.eventCounts || typeof S.eventCounts !== 'object' || Array.isArray(S.eventCounts)) S.eventCounts = {};
+    if (!S.restCounts || typeof S.restCounts !== 'object' || Array.isArray(S.restCounts)) S.restCounts = { day: S.day, count: 0 };
     return S;
   }
 
@@ -46,27 +51,45 @@ const DayCycle = (() => {
     return true;
   }
 
+  // 今日已休息次数（自然日键，跨日自动重置）
+  function restCount(S) {
+    ensure(S);
+    const rec = S.restCounts;
+    return rec && rec.day === S.day ? rec.count : 0;
+  }
+
+  // 今日剩余可休息次数；返回 { ok, count, limit, remaining }
+  function restLeft(S) {
+    const count = restCount(S);
+    return { ok: count < DAILY_REST_LIMIT, count, limit: DAILY_REST_LIMIT, remaining: Math.max(0, DAILY_REST_LIMIT - count) };
+  }
+
   // 推进：白天 -> 夜晚 -> 次日白天
-  // 返回阶段变化描述
+  // 受每日休息次数限制（DAILY_REST_LIMIT）：超限时返回 { ok:false, reason:'daily_rest_limit', ... } 且不改状态。
+  // 返回阶段变化描述；成功时附带 { ok:true, count, remaining }
   function advance(S) {
     ensure(S);
+    const left = restLeft(S);
+    if (!left.ok) {
+      return { ok: false, reason: 'daily_rest_limit', from: S.phase, to: S.phase, day: S.day, count: left.count, limit: left.limit, remaining: 0 };
+    }
+    S.restCounts = { day: S.day, count: left.count + 1 };
     if (S.phase === 'day') {
       S.phase = 'night';
       S.ap = NIGHT_AP;
-      return { from: 'day', to: 'night', day: S.day };
+      return { ok: true, from: 'day', to: 'night', day: S.day, count: left.count + 1, remaining: left.remaining - 1 };
     }
     // night -> next day
     S.phase = 'day';
     S.day += 1;
     S.ap = DAY_AP;
     if (S.chapter) S.dayCounters[S.chapter] = (S.dayCounters[S.chapter] || 0) + 1;
-    return { from: 'night', to: 'day', day: S.day };
+    return { ok: true, from: 'night', to: 'day', day: S.day, count: left.count + 1, remaining: left.remaining - 1 };
   }
 
-  // 休息（COST.rest = 0，不耗行动点）：无条件推进时段，用于"无事可做"时。
-  // 与 advance 区别：advance 由玩家主动选择"推进时段"（同样会刷新行动点），
-  // rest 语义上表示"就地休息等待"，结果相同（推进到夜晚/次日并刷新行动点），
-  // 这里保留独立函数便于后续给 rest 附加特殊效果（如回血/降侵蚀）。
+  // 休息（COST.rest = 0，不耗行动点）：推进时段，用于"无事可做"时。
+  // 与 advance 区别：rest 语义上表示"就地休息等待"，结果相同（推进到夜晚/次日并刷新行动点）。
+  // 两者共用每日休息次数限制（DAILY_REST_LIMIT），超限返回 { ok:false, reason:'daily_rest_limit' }。
   function rest(S) { return advance(S); }
 
   // 当前章已过天数（用于主线触发门槛）
@@ -108,9 +131,9 @@ const DayCycle = (() => {
   }
 
   return {
-    DAY_AP, NIGHT_AP, COST,
+    DAY_AP, NIGHT_AP, DAILY_REST_LIMIT, COST,
     ensure, getDay, getPhase, getAP, maxAP,
-    spend, advance, rest, chapterDays, mainReady,
+    spend, advance, rest, restCount, restLeft, chapterDays, mainReady,
     eventCount, canTriggerEvent, recordEvent,
   };
 })();

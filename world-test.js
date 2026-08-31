@@ -215,6 +215,38 @@ t('DayCycle.mainReady 章天数门槛', () => {
   if (!DayCycle.mainReady(S, 1, 2)) throw new Error('2天应满足 requireDays=2');
 });
 
+t('DayCycle 每日休息限 2 次，超限返回 ok:false 且不改状态', () => {
+  const S = freshState({ phase: 'day', ap: 2 });
+  S.restCounts = { day: S.day, count: DayCycle.DAILY_REST_LIMIT };
+  const before = JSON.stringify({ day: S.day, phase: S.phase, ap: S.ap, restCounts: S.restCounts });
+  const r = DayCycle.rest(S);
+  if (r.ok !== false || r.reason !== 'daily_rest_limit') throw new Error('超限应返回 ok:false/daily_rest_limit，实际 '+JSON.stringify(r));
+  const after = JSON.stringify({ day: S.day, phase: S.phase, ap: S.ap, restCounts: S.restCounts });
+  if (before !== after) throw new Error('被拒的休息不应改动任何状态');
+  if (r.remaining !== 0 || r.limit !== 2) throw new Error('超限应报告剩余 0 / 上限 2');
+});
+
+t('DayCycle 自然节奏：每天 2 次休息可推进一个完整日夜循环', () => {
+  const S = freshState({ phase: 'day', ap: 2, chapter: 1, dayCounters: {} });
+  const r1 = DayCycle.rest(S);
+  if (!r1.ok || r1.to !== 'night' || r1.count !== 1) throw new Error('第1次休息应成功到夜晚，实际 '+JSON.stringify(r1));
+  const r2 = DayCycle.rest(S);
+  if (!r2.ok || r2.to !== 'day' || r2.day !== 2 || r2.count !== 2) throw new Error('第2次休息应推进次日，实际 '+JSON.stringify(r2));
+  if (S.dayCounters[1] !== 1) throw new Error('推进完整一日应累计章天数');
+});
+
+t('DayCycle restLeft 跨日重置', () => {
+  const S = freshState({ phase: 'day', ap: 2 });
+  let l = DayCycle.restLeft(S);
+  if (l.remaining !== 2 || !l.ok) throw new Error('初始应剩余 2 次');
+  DayCycle.rest(S); // day -> night
+  l = DayCycle.restLeft(S);
+  if (l.remaining !== 1) throw new Error('白天休息后应剩 1 次，实际 '+l.remaining);
+  DayCycle.rest(S); // night -> day+1
+  l = DayCycle.restLeft(S);
+  if (l.remaining !== 2) throw new Error('跨入新的一天应重置为 2 次，实际 '+l.remaining);
+});
+
 // ---- 已知缺陷诊断（core/daycycle.js 只读，不改，仅记录，不计入失败）----
 (function diagDayCycleApReset() {
   const S = freshState({ phase: 'day', ap: 0 });
@@ -334,6 +366,37 @@ t('Game.passTime 推进日程不抛错', () => {
   if (r2.to !== 'day' || r2.day !== 2) throw new Error('night 应到第 2 天白天');
 });
 
+t('Game.passTime 每日休息超限时返回受限并打日志', () => {
+  const S = resetGame(1, { phase: 'day', day: 1, ap: 2, chapter: 1, dayCounters: {} });
+  S.restCounts = { day: S.day, count: DayCycle.DAILY_REST_LIMIT };
+  const logLen = viewCalls.log.length;
+  const r = Game.passTime();
+  if (!r || r.ok !== false || r.reason !== 'daily_rest_limit') throw new Error('超限应返回 ok:false/daily_rest_limit，实际 '+JSON.stringify(r));
+  if (S.phase !== 'day' || S.day !== 1) throw new Error('超限不应推进时段');
+  if (viewCalls.log.length === logLen) throw new Error('超限应有日志提示');
+});
+
+t('Game.passTime 主线天数仍能推进（每日限 2 次内）', () => {
+  const S = resetGame(1, { phase: 'day', day: 1, ap: 2, chapter: 1, dayCounters: {} });
+  const r1 = Game.passTime();
+  if (!r1 || r1.ok !== true || r1.to !== 'night') throw new Error('第1次推进应到夜晚，实际 '+JSON.stringify(r1));
+  const r2 = Game.passTime();
+  if (!r2 || r2.ok !== true || r2.to !== 'day' || r2.day !== 2) throw new Error('第2次推进应到第2天白天，实际 '+JSON.stringify(r2));
+  if (S.dayCounters[1] !== 1) throw new Error('推进完整一日应累计章天数');
+  const st = Game.isMainlineUnlocked(1, 1);
+  if (!st.unlocked) throw new Error('推进 1 天后主线应解锁');
+});
+
+t('Game.passTime 回血削减（夜晚 10% / 次日 20%）', () => {
+  const S = resetGame(1, { phase: 'day', day: 1, ap: 2, hp: 40, sp: 20, maxHp: 100, maxSp: 50, chapter: 1, dayCounters: {} });
+  Game.passTime(); // day -> night：回血 10%
+  if (S.hp !== 50) throw new Error('夜晚应回血 10%（40→50），实际 '+S.hp);
+  if (S.sp !== 25) throw new Error('夜晚应回 SP 10%（20→25），实际 '+S.sp);
+  Game.passTime(); // night -> day：回血 20%
+  if (S.hp !== 70) throw new Error('次日应回血 20%（50→70），实际 '+S.hp);
+  if (S.sp !== 35) throw new Error('次日应回 SP 20%（25→35），实际 '+S.sp);
+});
+
 t('Game.getLoc 取当前章节地点', () => {
   resetGame(7);
   Game.explore(7, 'loc_a');
@@ -366,7 +429,8 @@ global.ENEMIES = ENEMIES;
 //       south_area 孤岛（无车站连接，验证被车站路由排除）
 World.defineMap(8, [
   { id: 'station', name: '车站', district: 'station_area', conns: ['north', 'east'] },
-  { id: 'north', name: '北区入口', district: 'north_area', conns: ['station', 'north2'] },
+  { id: 'north', name: '北区入口', district: 'north_area', conns: ['station', 'north2'],
+    events: [ { id: 'ev_north_night', scene: 'sc_night', when: 'night' } ] },
   { id: 'north2', name: '北区深处', district: 'north_area', conns: ['north'] },
   { id: 'east', name: '东区入口', district: 'east_area', conns: ['station', 'east2'] },
   { id: 'east2', name: '东区深处', district: 'east_area', conns: ['east'] },
@@ -528,6 +592,46 @@ t('AP 不足时移动被拒', () => {
   if (viewCalls.log.length === logLen) throw new Error('拒绝时应有 log 提示');
 });
 
+t('夜晚 AP=1 移动触发夜剧情（移动与事件合一扣 1 AP）', () => {
+  const S = resetGame(7, { ap: 1, phase: 'night' });
+  Game.explore(7, 'loc_b'); // loc_b 白天事件，夜晚不应在探索时触发
+  const rs0 = viewCalls.runStory;
+  Game.moveTo('loc_c'); // loc_c 有 when:'night' 的 ev_night_c
+  if (Game.getCurrentLoc() !== 'loc_c') throw new Error('夜晚应能移动到 loc_c');
+  if (viewCalls.runStory !== rs0 + 1) throw new Error('夜晚移动到夜事件点应触发剧情，实际 ' + (viewCalls.runStory - rs0));
+  if (S.ap !== 0) throw new Error('夜晚移动+剧情应合计扣 1 AP，剩余 ' + S.ap);
+});
+
+t('夜晚 AP=1 移动触发夜战（移动与战斗合一扣 1 AP）', () => {
+  const S = resetGame(6, { ap: 1, phase: 'night' });
+  Game.explore(6, 'loc_side'); // loc_side 有 when:'any' 对话事件，探索时不触发
+  const rb0 = viewCalls.runBattle;
+  Game.moveTo('loc_fight'); // loc_fight 有 when:'any' 战斗事件 ev_rep_fight
+  if (Game.getCurrentLoc() !== 'loc_fight') throw new Error('夜晚应能移动到 loc_fight');
+  if (viewCalls.runBattle !== rb0 + 1) throw new Error('夜晚移动到战斗点应触发战斗，实际 ' + (viewCalls.runBattle - rb0));
+  if (S.ap !== 0) throw new Error('夜晚移动+战斗应合计扣 1 AP，剩余 ' + S.ap);
+});
+
+t('白天移动+事件总消耗合理（仅扣移动 1 AP，事件不再额外扣）', () => {
+  const S = resetGame(7, { ap: 2, phase: 'day' });
+  Game.explore(7, 'loc_a'); // loc_a 有 when:'any' once 事件，探索时不触发
+  const rs0 = viewCalls.runStory;
+  Game.moveTo('loc_b'); // loc_b 有 when:'day' 的 ev_day_b
+  if (viewCalls.runStory !== rs0 + 1) throw new Error('白天移动到白天事件点应触发剧情，实际 ' + (viewCalls.runStory - rs0));
+  if (S.ap !== 1) throw new Error('白天移动+事件应合计扣 1 AP，剩余 ' + S.ap);
+});
+
+t('夜晚 AP=1 交通到区域入口触发夜事件（交通与事件合一扣 1 AP）', () => {
+  const S = resetGame(8, { ap: 1, phase: 'night' });
+  Game.explore(8, 'station');
+  const rs0 = viewCalls.runStory;
+  const ok = Game.travelToDistrict('north_area'); // north 入口有 when:'night' 的 ev_north_night
+  if (!ok) throw new Error('夜晚应能交通到北区');
+  if (Game.getCurrentLoc() !== 'north') throw new Error('应抵达北区入口 north，实际 ' + Game.getCurrentLoc());
+  if (viewCalls.runStory !== rs0 + 1) throw new Error('交通后入口夜事件应触发，实际 ' + (viewCalls.runStory - rs0));
+  if (S.ap !== 0) throw new Error('交通+事件应合计扣 1 AP，剩余 ' + S.ap);
+});
+
 t('AP 扣减：fireAt 战斗扣1', () => {
   const S = resetGame(6, { ap: 2, chapter: 3, phase: 'day' });
   Game.explore(6, 'loc_fight');
@@ -577,6 +681,43 @@ t('主线 gate：advanceMainline 已解锁时进入主线', () => {
   if (r.unlocked !== true) throw new Error('已解锁应返回 unlocked=true');
   if (r.scene !== 'chapter1_1') throw new Error('应跳转到 chapter1_1，实际 ' + r.scene);
   if (viewCalls.runStory !== rs0 + 1) throw new Error('已解锁应触发 runStory');
+});
+
+t('主线断点：advanceMainline 两次推进到不同进度（不重跑）', () => {
+  const S = resetGame(1, { chapter: 1, dayCounters: { 1: 1 } });
+  const r1 = Game.advanceMainline(1, 1);
+  const r2 = Game.advanceMainline(1, 1);
+  if (r1.unlocked !== true || r2.unlocked !== true) throw new Error('dayCounters=1 应已解锁');
+  if (r1.scene !== 'chapter1_1') throw new Error('首次应从 chapter1_1，实际 ' + r1.scene);
+  if (r1.progress !== 'chapter1_4') throw new Error('首次进度应为 chapter1_4，实际 ' + r1.progress);
+  if (r2.progress !== 'chapter1_8') throw new Error('二次进度应为 chapter1_8，实际 ' + r2.progress);
+  if (r1.progress === r2.progress) throw new Error('两次推进不应重跑同一进度');
+  if (S.mainline[1] !== 'chapter1_8') throw new Error('进度记录应为 chapter1_8，实际 ' + S.mainline[1]);
+});
+
+t('主线门槛：getMainlineGate 渐进天数', () => {
+  const S = resetGame(1, { chapter: 1, dayCounters: {} });
+  let gate = Game.getMainlineGate(1);
+  if (gate.unlocked !== false) throw new Error('0 天不应解锁');
+  if (gate.need !== 1) throw new Error('首步需 1 天，实际 ' + gate.need);
+  S.dayCounters[1] = 1;
+  Game.advanceMainline(1, 1);
+  gate = Game.getMainlineGate(1);
+  if (gate.unlocked !== false) throw new Error('推进后应需更多天');
+  if (gate.requireDays !== 2) throw new Error('二步需 2 天，实际 ' + gate.requireDays);
+  S.dayCounters[1] = 2;
+  gate = Game.getMainlineGate(1);
+  if (gate.unlocked !== true) throw new Error('2 天应解锁二步');
+});
+
+t('主线断点：存档读档后进度保留', () => {
+  const S = resetGame(1, { chapter: 1, dayCounters: { 1: 1 } });
+  Game.advanceMainline(1, 1);
+  const saved = S.mainline && S.mainline[1];
+  Engine.saveSlot();
+  if (!Engine.loadSlot()) throw new Error('loadSlot 应成功');
+  const st = Engine.getState();
+  if (!st.mainline || st.mainline[1] !== saved) throw new Error('读档后进度应保留，实际 ' + (st.mainline && st.mainline[1]));
 });
 
 t('每日限量：重复战斗每天最多 2 次', () => {
@@ -697,6 +838,105 @@ t('所有战斗事件 enemy 引用真实存在的敌人 id', () => {
   }
   if (bad.length) throw new Error('未找到的敌人 id:\n' + bad.join('\n'));
 });
+
+// ==================== 第3章支线：地图事件 × 主线菜单 双路径防重 ====================
+// 背景：同一场景既可从地图事件触发（game.js once + doneScenes 防重），
+//      也可从主线菜单选项进入（story 的 flag/cond 防重），两套防重互不相通，
+//      导致 d3_dream_realm 等支线可被双刷（信任 +12/+6 等）。
+// 修复：地图事件新增 flag 字段（触发即置位）+ cond 查同一 flag；
+//      菜单选项加 cond 查同一 flag；场景 onEnter 置位同一 flag。
+// 本块校验三层一致性：flag 同名、菜单 cond 随 flag 隐藏、地图事件随 flag 不再触发。
+
+// 加载 story-data.js（含编译后的 onEnter / 菜单 cond），供菜单侧断言使用
+const sdPath = path.join(dir, 'story-data.js');
+let SD = null;
+try {
+  const sdCode = fs.readFileSync(sdPath, 'utf8');
+  new Function(sdCode)();
+  SD = global.__STORY_DATA__ || null;
+} catch (e) {
+  console.log('WARN | 无法加载 story-data.js（先运行 node tools/build-story.js）: ' + e.message);
+}
+
+// 每个支线的场景 -> 共享 flag -> 地图事件 -> 菜单所属场景 + 菜单选项目标
+const ch3DualMatrix = [
+  { scene: 'd3_dream_realm', flag: 'd3_dream_done',   loc: 'abyss_verge',   evId: 'ev3_dream_realm',    phase: 'night', menuScene: 'chapter3_2', menuNext: 'd3_dream_realm' },
+  { scene: 'ch3_side1',      flag: 'hagoromo_joined', loc: 'abyss_verge',   evId: 'ev3_find_hagoromo',  phase: 'day',   menuScene: 'chapter3_2', menuNext: 'ch3_side1' },
+  // ch3_side2 无独立菜单选项（经由 ch3_side1 的 next 链进入），其菜单防护挂在 ch3_side1 选项上
+  { scene: 'ch3_side2',      flag: 'ch3_side2_done',  loc: 'cocoon_forest', evId: 'ev3_hagoromo_side2', phase: 'day',   menuScene: 'chapter3_2', menuNext: 'ch3_side1' },
+  { scene: 'd3_suzu_memory', flag: 'd3_suzu_done',    loc: 'memory_sea',    evId: 'ev3_suzu_memory',    phase: 'night', menuScene: 'chapter3_5', menuNext: 'd3_suzu_memory' },
+  { scene: 'ch3_side3',      flag: 'ch3_side3_done',  loc: 'truth_archive', evId: 'ev3_prof_truth',     phase: 'day',   menuScene: 'chapter3_6', menuNext: 'ch3_side3' },
+];
+
+// 1) 地图事件具备 once + flag + cond，且 cond 引用真实存在的 flag
+for (const m of ch3DualMatrix) {
+  t(`ch3 防重[${m.scene}]: 地图事件 once+flag+cond 齐备且 cond 引用真实 flag`, () => {
+    const loc = World.getLocation(3, m.loc);
+    const ev = loc && (loc.events || []).find(e => e.id === m.evId);
+    if (!ev) throw new Error(`找不到地图事件 ${m.evId}`);
+    if (ev.once !== true) throw new Error(`${m.evId} 应 once:true`);
+    if (ev.flag !== m.flag) throw new Error(`${m.evId}.flag 应为 ${m.flag}，实际 ${ev.flag}`);
+    if (typeof ev.cond !== 'function') throw new Error(`${m.evId} 应有 cond`);
+    // cond 引用真实 flag：flag 置位后应返回 false
+    const S = freshState({ trust: { hagoromo: 20 } });
+    Engine.setState(S);
+    S.flags[m.flag] = true;
+    if (ev.cond(S)) throw new Error(`${m.evId}.cond 在 flag=${m.flag} 置位后应返回 false`);
+    delete S.flags[m.flag];
+    Engine.setState(S);
+    // 无 flag 时应可触发（ch3_side2 还需 trust>=15，已满足）
+    if (!ev.cond(S)) throw new Error(`${m.evId}.cond 在 flag 未置位时应返回 true`);
+  });
+}
+
+// 2) 场景 onEnter 置位共享 flag（菜单路径走场景 onEnter）
+for (const m of ch3DualMatrix) {
+  t(`ch3 防重[${m.scene}]: 场景 onEnter 置位 flag ${m.flag}`, () => {
+    if (!SD || !SD[m.scene]) throw new Error(`story-data 缺少场景 ${m.scene}`);
+    if (typeof SD[m.scene].onEnter !== 'function') throw new Error(`${m.scene} 应含 onEnter`);
+    const S = freshState({ trust: { hagoromo: 20 } });
+    Engine.setState(S);
+    SD[m.scene].onEnter(S);
+    if (!S.flags[m.flag]) throw new Error(`${m.scene}.onEnter 应置位 ${m.flag}，实际 flags=${JSON.stringify(S.flags)}`);
+  });
+}
+
+// 3) 菜单选项 cond 引用同一 flag（flag 置位后选项隐藏；未置位时可选）
+for (const m of ch3DualMatrix) {
+  t(`ch3 防重[${m.scene}]: 菜单选项 cond 查同一 flag`, () => {
+    if (!SD || !SD[m.menuScene] || !Array.isArray(SD[m.menuScene].choices)) {
+      throw new Error(`story-data 缺少菜单场景 ${m.menuScene}`);
+    }
+    const choice = SD[m.menuScene].choices.find(c => c.next === m.menuNext);
+    if (!choice) throw new Error(`${m.menuScene} 缺少选项 -> ${m.menuNext}`);
+    if (typeof choice.condition !== 'function') throw new Error(`${m.menuScene}->${m.menuNext} 应含 cond`);
+    const S = freshState({ trust: { hagoromo: 20 } });
+    Engine.setState(S);
+    if (!choice.condition(S)) throw new Error(`flag 未置位时 ${m.menuScene}->${m.menuNext} 应可选`);
+    S.flags[m.flag] = true;
+    Engine.setState(S);
+    if (choice.condition(S)) throw new Error(`flag=${m.flag} 置位后 ${m.menuScene}->${m.menuNext} 应隐藏`);
+  });
+}
+
+// 4) 双向防重端到端：flag 置位（地图/菜单任一先走）后，另一路径不再触发
+for (const m of ch3DualMatrix) {
+  t(`ch3 防重[${m.scene}]: 路径之一触发后另一路径不再触发`, () => {
+    const S = freshState({ chapter: 3, trust: { hagoromo: 20 }, doneScenes: {} });
+    Engine.setState(S);
+    S.flags[m.flag] = true; // 模拟任一路径已走
+    Engine.setState(S);
+    const ev = World.rollEvent(3, m.loc, m.phase, S);
+    if (ev && ev.id === m.evId) throw new Error(`flag=${m.flag} 置位后 ${m.evId} 仍被 rollEvent 抽出`);
+    // 菜单侧：flag 置位后对应选项 cond 为 false（= 隐藏）
+    if (SD && SD[m.menuScene]) {
+      const choice = SD[m.menuScene].choices.find(c => c.next === m.menuNext);
+      if (choice && typeof choice.condition === 'function' && choice.condition(S)) {
+        throw new Error(`flag=${m.flag} 置位后菜单 ${m.menuScene}->${m.menuNext} 仍可见`);
+      }
+    }
+  });
+}
 
 // ---- 汇总输出（等待 async 测试完成）----
 Promise.all(asyncTests).then(() => {

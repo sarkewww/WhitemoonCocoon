@@ -394,6 +394,80 @@ t('sellItem 半价回笼金币', () => {
   if (Engine.hasItem('potion', 1)) throw new Error('卖出后应无 potion');
 });
 
+t('buyItem 有 shopDiscount 时按折扣价扣款', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  s.shopDiscount = 0.10;   // 对应羽衣 R3 商店折扣
+  const price = Data.getItem('potion').price;
+  const expected = Math.round(price * (1 - 0.10));
+  const r = Engine.buyItem('potion', 1);
+  if (!r.ok) throw new Error('buyItem 应成功: '+(r.msg||''));
+  if (r.cost !== expected) throw new Error('折扣扣款应为 '+expected+'，实际 '+r.cost);
+  if (s.money !== 500 - expected) throw new Error('money 应减少 '+expected+'，实际 money='+s.money);
+  if (!Engine.hasItem('potion', 1)) throw new Error('potion 应入库 1 个');
+});
+
+t('buyItem 无折扣时按原价扣款（回归）', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  const price = Data.getItem('potion').price;
+  const r = Engine.buyItem('potion', 1);
+  if (!r.ok) throw new Error('buyItem 应成功');
+  if (r.cost !== price) throw new Error('无折扣扣款应为原价 '+price+'，实际 '+r.cost);
+  if (s.money !== 500 - price) throw new Error('money 应减少原价');
+});
+
+t('sellItem 不受 shopDiscount 影响（卖出价不变）', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  s.shopDiscount = 0.15;   // 最大商店折扣也不影响卖出
+  Engine.addItem('potion', 1);
+  const price = Data.getItem('potion').price;
+  const sell = Math.max(1, Math.floor(price * 0.5));
+  const r = Engine.sellItem('potion', 1);
+  if (!r.ok) throw new Error('sellItem 应成功');
+  if (r.gained !== sell) throw new Error('卖出应 +'+sell+'（不打折），实际 '+r.gained);
+  if (s.money !== 500 + sell) throw new Error('money 应为 500+'+sell+'，实际 '+s.money);
+});
+
+t('craftRecipe 有 craftDiscount 时材料消耗打折', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  Engine.setG({ RECIPES: { r_potion: { name:'调和魂愈药水', cost:{ tentacle_frag:2, moon_petal:1 }, out:{ id:'potion', count:1 } } } });
+  s.craftDiscount = 0.50;   // 大折扣便于验证取整：2→1，1→1（至少 1）
+  Engine.addMaterial('tentacle_frag', 2);
+  Engine.addMaterial('moon_petal', 1);
+  const r = Engine.craftRecipe('r_potion');
+  if (!r.ok) throw new Error('craftRecipe 应成功: '+(r.msg||''));
+  if ((s.materials['tentacle_frag']||0) !== 2 - 1) throw new Error('tentacle_frag 应消耗 1（原2*0.5），剩余 '+(s.materials['tentacle_frag']||0));
+  if ((s.materials['moon_petal']||0) !== 0) throw new Error('moon_petal 应消耗 1（至少 1），剩余 '+(s.materials['moon_petal']||0));
+  if (!Engine.hasItem('potion', 1)) throw new Error('potion 应产出 1 个');
+});
+
+t('craftRecipe 无折扣时按原价扣材料（回归）', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  Engine.setG({ RECIPES: { r_potion: { name:'调和魂愈药水', cost:{ tentacle_frag:2, moon_petal:1 }, out:{ id:'potion', count:1 } } } });
+  Engine.addMaterial('tentacle_frag', 2);
+  Engine.addMaterial('moon_petal', 1);
+  const r = Engine.craftRecipe('r_potion');
+  if (!r.ok) throw new Error('craftRecipe 应成功');
+  if ((s.materials['tentacle_frag']||0) !== 0) throw new Error('无折扣应消耗 2 个 tentacle_frag');
+  if ((s.materials['moon_petal']||0) !== 0) throw new Error('无折扣应消耗 1 个 moon_petal');
+});
+
+t('craftRecipe 材料不足（折扣后）被拒', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  Engine.setG({ RECIPES: { r_potion: { name:'调和魂愈药水', cost:{ tentacle_frag:2, moon_petal:1 }, out:{ id:'potion', count:1 } } } });
+  s.craftDiscount = 0.50;   // 折扣后仍需 tentacle_frag 1 + moon_petal 1
+  Engine.addMaterial('tentacle_frag', 0);
+  Engine.addMaterial('moon_petal', 1);   // 缺 tentacle_frag
+  const r = Engine.craftRecipe('r_potion');
+  if (r.ok) throw new Error('材料不足应被拒');
+  if ((s.materials['tentacle_frag']||0) !== 0) throw new Error('被拒后材料不应被扣');
+});
+
 t('equipArmor 后 recalcStats 含防御加成', () => {
   const s = Engine.newGame();
   Engine.setState(s);

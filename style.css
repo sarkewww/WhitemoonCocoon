@@ -373,6 +373,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   .dialog-box { max-width:92%; padding:14px 16px; font-size:12px; max-height:70vh; overflow-y:auto; }
   .panel { width:min(340px,92vw); padding-bottom:env(safe-area-inset-bottom); }
   .panel-body .save-btn { min-height:44px; padding:10px 8px; }
+  .shop-buy, .shop-sell, .shop-equip, .shop-unequip { min-height:44px; }
   .panel-close { min-width:40px; min-height:40px; }
   .end-title { font-size:20px; }
   .end-art { transform:scale(.7); transform-origin:center; }
@@ -395,7 +396,11 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   .choice-btn { font-size:11px; padding:5px 8px; }
   .battle-menu { grid-template-columns:1fr 1fr; gap:3px; }
   .battle-log { height:70px; font-size:11px; }
+  .map-foot { padding:6px 10px; justify-content:center; }
+  .map-actions { width:100%; justify-content:center; }
+  .map-desc { flex:1 1 100%; text-align:center; }
 }
+
 
 /* ===== RPG ��ͼ ===== */
 .map {
@@ -443,8 +448,9 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .map-foot {
   flex:0 0 auto; padding:8px 14px; border-top:1px solid var(--border);
   display:flex; gap:8px; align-items:center; justify-content:space-between;
+  flex-wrap:wrap;
 }
-.map-actions { display:flex; gap:8px; }
+.map-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .map-btn {
   font-family:var(--mono); font-size:12px; padding:6px 12px; cursor:pointer;
   background:var(--panel); color:var(--accent-hi); border:1px solid var(--border);
@@ -482,7 +488,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .shop-price { color:var(--gold); font-size:11px; white-space:nowrap; }
 .shop-disc { color:var(--green); font-size:10px; }
 .shop-owned { color:var(--fg-dim); font-size:10px; margin-left:4px; }
-.shop .save-btn { width:auto; padding:2px 10px; font-size:11px; }
+.shop-buy, .shop-sell, .shop-equip { width:auto; padding:2px 10px; font-size:11px; }
 .shop-unequip { width:auto; padding:2px 8px; font-size:11px; }
 
 /* ===== �ֻ��������� ===== */

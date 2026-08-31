@@ -247,11 +247,14 @@ const Engine = (() => {
     const G = getG();
     if (!G || !G.RECIPES || !G.RECIPES[id]) return { ok:false, msg:'未知配方' };
     const rp = G.RECIPES[id];
-    // 检查材料
+    const disc = st.craftDiscount || 0;
+    const needOf = (n) => Math.max(1, Math.floor(n * (1 - disc)));   // 羽衣折扣：材料向下取整且至少 1
+    // 检查材料（按折扣后需求量）
     for (const [m, n] of Object.entries(rp.cost)) {
-      if ((st.materials[m]||0) < n) return { ok:false, msg:'材料不足' };
+      const need = needOf(n);
+      if ((st.materials[m]||0) < need) return { ok:false, msg:'材料不足', need };
     }
-    for (const [m, n] of Object.entries(rp.cost)) removeMaterial(m, n);
+    for (const [m, n] of Object.entries(rp.cost)) removeMaterial(m, needOf(n));
     addItem(rp.out.id, rp.out.count);
     return { ok:true, item:rp.out };
   }
@@ -260,6 +263,7 @@ const Engine = (() => {
     const st = getState();
     if (!st.trust) st.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
     if (char in st.trust) st.trust[char] = clamp(st.trust[char] + n, 0, 100);
+    recalcStats(st);
   }
   function getTrust(char) {
     const st = getState();
@@ -421,8 +425,9 @@ const Engine = (() => {
     const kind = itemKindOf(id);
     const price = priceOf(id);
     if (!kind || price <= 0) return { ok:false, msg:'未知物品' };
-    const cost = price * qty;
     const st = getState();
+    const unit = Math.round(price * (1 - (st.shopDiscount || 0)));   // 羽衣折扣：与商店面板显示一致
+    const cost = unit * qty;
     if ((st.money||0) < cost) return { ok:false, msg:'金币不足', need: cost, money: st.money };
     st.money -= cost;
     if (kind === 'material') addMaterial(id, qty);

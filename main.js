@@ -348,6 +348,8 @@ const App = (() => {
     Engine.clearSlot();
     Engine.clearAuto();
     Engine.setState(Engine.newGame(diff));
+    Engine.getState().retryCount = 0;
+    Engine.getState().retryEnemyMult = 1;
     bootEl.classList.add('hidden');
     gameEl.classList.remove('hidden');
     endEl.classList.add('hidden');
@@ -358,6 +360,10 @@ const App = (() => {
 
   function loadGame() {
     if (Engine.loadAuto()) {
+      const LS = Engine.getState();
+      if (typeof LS.retryCount !== 'number' || isNaN(LS.retryCount)) LS.retryCount = 0;
+      LS.retryEnemyMult = 1;
+      LS.retryCount = 0;
       bootEl.classList.add('hidden');
       gameEl.classList.remove('hidden');
       endEl.classList.add('hidden');
@@ -416,6 +422,8 @@ const App = (() => {
   function updateSidePanel(panelEl) {
     const S = Engine.getState();
     const ch = ['序章','第一章','第二章','第三章','终章'][S.chapter]||'序章';
+    const freePhase = (typeof Game === 'undefined' || !Game.getPhase || !Game.PHASES) ? true :
+      (Game.getPhase() === Game.PHASES.EXPLORE || Game.getPhase() === Game.PHASES.MENU);
     const inv = S.inventory.map(i => {
       const d = (Battle.ITEMS||{})[i.id];
       return d ? `<div class="row"><span class="k">·</span><span class="v gray">${d.name} ×${i.count}</span></div>` : '';
@@ -490,9 +498,9 @@ const App = (() => {
       '<div class="sec">── 强化 ──</div>' +
       '<div class="row"><button class="save-btn" data-stat="weapon">强化武器 (当前 +'+(S.weaponLevel||1)+')</button></div>' +
       '<div class="row" style="font-size:10px;color:var(--fg-dim);">需暗蚀结晶 ×'+(S.weaponLevel||1)*2+'</div>' +
-      '<div class="sec">── 商店 ──</div>' +
+      (freePhase ? '<div class="sec">── 商店 ──</div>' +
       '<div class="row"><button class="save-btn" data-sys="shop">商店（买入/卖出）</button></div>' +
-      '<div class="row"><button class="save-btn" data-sys="equip">装备（防具/饰品）</button></div>' +
+      '<div class="row"><button class="save-btn" data-sys="equip">装备（防具/饰品）</button></div>' : '') +
       '<div class="sec">── 系统 ──</div>' +
       '<div class="row"><button class="save-btn" data-sys="save">保存</button></div>' +
       '<div class="row"><button class="save-btn" data-sys="load">读取</button></div>',
@@ -536,8 +544,14 @@ const App = (() => {
           if (Engine.hasAuto()) { Engine.loadAuto(); showDialog('读档完成。'); togglePanel(false); choiceLock = false; if (!continueFromSavedScene(Engine.getState().scene)) { runScene(Engine.getState().scene); } }
           else { showDialog('没有存档。'); }
         }
-        else if (b.dataset.sys === 'shop') { togglePanel(false); setTimeout(() => showShopPanel(), 50); }
-        else if (b.dataset.sys === 'equip') { togglePanel(false); setTimeout(() => showEquipPanel(), 50); }
+        else if (b.dataset.sys === 'shop') {
+          togglePanel(false);
+          if (guardFreePhase('商店')) setTimeout(() => showShopPanel(), 50);
+        }
+        else if (b.dataset.sys === 'equip') {
+          togglePanel(false);
+          if (guardFreePhase('装备')) setTimeout(() => showEquipPanel(), 50);
+        }
       });
     });
   }
@@ -664,8 +678,11 @@ const App = (() => {
       choiceLock = false;
       await wait(500);
       await startBattle({
-        enemy: scene.battle.enemy,
+        enemy: withRetryEnemy(scene.battle.enemy),
         onWin: async (enemy) => {
+          const WS = Engine.getState();
+          WS.retryCount = 0;
+          if (WS.retryEnemyMult != null) WS.retryEnemyMult = 1;
           if (scene.battle.next) await runScene(scene.battle.next);
         },
         onLose: async (enemy) => {
@@ -712,6 +729,12 @@ const App = (() => {
           }
           updateHUD();
           Engine.autoSave();
+          // 主线断点：本场景为主线推进边界时，做出选择后停止连播并返回地图
+          if (typeof Game !== 'undefined' && Game.isMainlineBoundary && Game.isMainlineBoundary(currentSceneId)) {
+            if (typeof Game.clearMainlineBoundary === 'function') Game.clearMainlineBoundary();
+            Game.returnToMap && Game.returnToMap();
+            return;
+          }
           if (ch.next) runScene(ch.next);
         });
         choicesEl.appendChild(btn);
@@ -732,6 +755,12 @@ const App = (() => {
         Game.explore(mapChapter);
         Engine.autoSave();
       } else {
+        // 主线断点：本场景为主线推进边界且含 next 时，停止连播并返回地图
+        if (typeof Game !== 'undefined' && Game.isMainlineBoundary && Game.isMainlineBoundary(currentSceneId)) {
+          if (typeof Game.clearMainlineBoundary === 'function') Game.clearMainlineBoundary();
+          Game.returnToMap && Game.returnToMap();
+          return;
+        }
         const nextScene = (typeof Story !== 'undefined' && Story.get) ? Story.get(scene.next) : null;
         const isTail = nextScene && !nextScene.next &&
           !(nextScene.choices && nextScene.choices.length) && !nextScene.battle;
@@ -909,24 +938,24 @@ const App = (() => {
     battleLogEl.scrollTop = battleLogEl.scrollHeight;
   }
 
+  function getActionList() {
+    const S = Engine.getState();
+    const ultReady = comboCount >= 8;
+    const learned = (id) => Engine.hasSkill(id);
+    const actions = [];
+    if (learned('strike')) actions.push({ id: 'strike', label: '苍月斩', desc: '普通攻击 · SP+5', cost: 0, disable: false });
+    if (learned('pure')) actions.push({ id: 'pure', label: '净化之矢', desc: '强力攻击 · 消耗SP20', cost: 20, disable: S.sp < 20 });
+    actions.push({ id: 'guard', label: '防御', desc: '减少伤害', cost: 0, disable: false });
+    if (learned('erosion')) actions.push({ id: 'erosion', label: '蚀心之触', desc: '超强力攻击 · 侵蚀+8', cost: 25, disable: S.sp < 25 || S.ero >= 100 });
+    actions.push({ id: 'heal', label: '魂愈', desc: '恢复28%HP · 消耗SP15', cost: 15, disable: S.sp < 15 });
+    actions.push({ id: 'item', label: '道具', desc: '使用随身道具', cost: 0, disable: S.inventory.length === 0 });
+    actions.push({ id: 'ultimate', label: '白月破晓', desc: '必杀技 · 需充能', cost: 0, disable: !ultReady });
+    return actions;
+  }
+
   function promptAction(enemy) {
     return new Promise((resolve) => {
-      const S = Engine.getState();
-      const actions = [
-        { id: 'strike', label: '苍月斩', desc: '普通攻击 · SP+8', cost: 0, disable: false },
-        { id: 'pure', label: '净化之矢', desc: '强力攻击 · 消耗SP20', cost: 20, disable: S.sp < 20 },
-        { id: 'guard', label: '防御', desc: '减少伤害', cost: 0, disable: false },
-        { id: 'erosion', label: '蚀心之触', desc: '超强力攻击 · 侵蚀+12', cost: 0, disable: S.ero >= 100 },
-        { id: 'heal', label: '魂愈', desc: '恢复28%HP · 消耗SP15', cost: 15, disable: S.sp < 15 },
-        { id: 'item', label: '道具', desc: '使用随身道具', cost: 0, disable: S.inventory.length === 0 },
-        { id: 'ultimate', label: '白月破晓', desc: '必杀技 · 需充能', cost: 0, disable: true },
-      ];
-      // 检查充能
-      const ultReady = comboCount >= 8;
-      for (const a of actions) {
-        if (a.id === 'ultimate') a.disable = !ultReady;
-      }
-
+      const actions = getActionList();
       battleMenu.innerHTML = '';
       for (const a of actions) {
         const btn = document.createElement('button');
@@ -1025,7 +1054,17 @@ const App = (() => {
   // ===== 死亡处理 =====
   async function dieAndRetry() {
     const S = Engine.getState();
+    if (typeof S.retryCount !== 'number' || isNaN(S.retryCount)) S.retryCount = 0;
+    S.retryCount++;
+    Engine.autoSave();
     await wait(1000);
+    if (S.retryCount >= 3) {
+      showDialog('连续战败…… 契约的庇护开始动摇。');
+      await wait(1500);
+      hideDialog();
+      showDeathMenu();
+      return;
+    }
     showDialog('绫音倒地了…… 但契约的力量将她拉回现世。');
     await wait(1800);
     hideDialog();
@@ -1033,6 +1072,100 @@ const App = (() => {
     S.sp = Math.round(S.maxSp * 0.3);
     S.ero = Engine.clamp(S.ero + 5, 0, 100);
     runScene(currentSceneId);
+  }
+
+  // 连续 3 次战败后的死亡菜单：提供不依赖战斗力的出口（降难度/读档/放弃）
+  function showDeathMenu() {
+    const S = Engine.getState();
+    const scene = Story.get(currentSceneId);
+    const battle = scene && scene.battle;
+    const curDiff = S.difficulty || 'normal';
+    const diffName = { easy: '新手', normal: '普通', hard: '困难' };
+    const nextDiff = curDiff === 'hard' ? 'normal' : (curDiff === 'normal' ? 'easy' : null);
+    const hasLose = !!(battle && battle.loseScene);
+    const canMap = typeof Game !== 'undefined' && typeof Game.returnToMap === 'function';
+
+    // 1) 降低难度重试（hard→normal→easy；已是最低难度则削弱敌人 HP-20%）
+    const optDiff = {
+      text: '降低难度重试（' + (nextDiff ? diffName[curDiff] + '→' + diffName[nextDiff] : '已是新手，削弱敌人 HP-20%') + '）',
+      fn: () => {
+        if (nextDiff) {
+          S.difficulty = nextDiff;
+          if (typeof Engine.recalcStats === 'function') Engine.recalcStats();
+        } else {
+          S.retryEnemyMult = Math.max(0.3, (S.retryEnemyMult == null ? 1 : S.retryEnemyMult) * 0.8);
+        }
+        S.hp = S.maxHp; S.sp = S.maxSp;
+        S.retryCount = 0;
+        Engine.autoSave();
+        runScene(currentSceneId);
+      },
+    };
+    // 2) 读档
+    const optLoad = {
+      text: '读取存档',
+      fn: () => {
+        S.retryCount = 0;
+        Engine.autoSave();
+        loadGame();
+      },
+    };
+    // 3) 放弃本场战斗：优先走 loseScene，否则返回地图 / 跳主线 / 回标题
+    const optGive = {
+      text: hasLose ? '放弃战斗，接受败北结局' : (canMap ? '放弃战斗，返回地图' : '放弃战斗，跳过本战'),
+      fn: () => {
+        S.retryCount = 0;
+        if (hasLose) { runScene(battle.loseScene); return; }
+        if (canMap) { Game.returnToMap(); return; }
+        if (battle && battle.next) { runScene(battle.next); return; }
+        showTitle();
+      },
+    };
+
+    if (Battle && typeof Battle.stop === 'function') Battle.stop();
+    battleEl.classList.add('hidden');
+    storyEl.classList.remove('hidden');
+    choiceLock = false;
+    storyText.innerHTML = '<div class="line" style="color:var(--red-hi);">绫音倒下了。连败的阴影笼罩着她。</div>' +
+      '<div class="line" style="color:var(--fg-dim);">眼前的敌人远超她当前的力量——</div>';
+    storyScroll.scrollTop = storyScroll.scrollHeight;
+
+    choicesEl.innerHTML = '';
+    storyScroll.classList.add('has-choices');
+    const sceneId = currentSceneId;
+    const handler = (e) => {
+      if (currentSceneId !== sceneId) { document.removeEventListener('keydown', handler); return; }
+      const n = parseInt(e.key);
+      if (n >= 1 && n <= 3) {
+        const btns = choicesEl.querySelectorAll('.choice-btn');
+        if (btns[n-1]) { document.removeEventListener('keydown', handler); btns[n-1].click(); }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    const opts = [optDiff, optLoad, optGive];
+    opts.forEach((o, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'choice-btn';
+      btn.textContent = o.text;
+      btn.addEventListener('click', () => {
+        document.removeEventListener('keydown', handler);
+        choicesEl.innerHTML = '';
+        storyScroll.classList.remove('has-choices');
+        if (choiceLock) return;
+        choiceLock = false;
+        o.fn();
+      });
+      choicesEl.appendChild(btn);
+    });
+    setTimeout(() => document.removeEventListener('keydown', handler), 20000);
+  }
+
+  // 死亡菜单削弱敌人的乘数：应用到 runScene 的战斗敌人上（不修改场景数据）
+  function withRetryEnemy(enemy) {
+    const S = Engine.getState();
+    const m = S.retryEnemyMult;
+    if (!m || m >= 1 || !enemy || typeof enemy.hp !== 'number') return enemy;
+    return Object.assign({}, enemy, { hp: Math.max(1, Math.round(enemy.hp * m)) });
   }
 
   // ===== 对话框 =====
@@ -1379,13 +1512,24 @@ const App = (() => {
     info.className = 'map-desc';
     const S = typeof Engine !== 'undefined' && Engine.getState();
     const ch = S && S.chapter;
-    // 主线门槛：未解锁时显示还需天数
+    // 主线门槛：未解锁时显示还需天数（渐进门槛：每推进一段需多待一天）
     let gateText = '';
     let gateLocked = false;
-    if (typeof Game !== 'undefined' && Game.isMainlineUnlocked && S && ch) {
+    let gateNeed = 0;
+    if (typeof Game !== 'undefined' && Game.getMainlineGate && S && ch) {
+      const st = Game.getMainlineGate(ch);
+      if (st && !st.unlocked) {
+        gateLocked = true;
+        gateNeed = st.need;
+        gateText = ' · 主线锁定：还需 ' + st.need + ' 天可推进';
+      } else {
+        gateText = ' · 主线已可推进';
+      }
+    } else if (typeof Game !== 'undefined' && Game.isMainlineUnlocked && S && ch) {
       const st = Game.isMainlineUnlocked(ch, 1);
       if (st && !st.unlocked) {
         gateLocked = true;
+        gateNeed = st.need;
         gateText = ' · 主线锁定：还需 ' + st.need + ' 天可推进';
       } else {
         gateText = ' · 主线已可推进';
@@ -1408,16 +1552,16 @@ const App = (() => {
     });
     const mainBtn = document.createElement('button');
     mainBtn.className = 'map-btn mainline-btn' + (gateLocked ? ' mainline-locked' : '');
-    mainBtn.textContent = gateLocked ? '继续主线（还需' + (Game.isMainlineUnlocked ? Game.isMainlineUnlocked(ch, 1).need : 0) + '天）' : '继续主线';
+    mainBtn.textContent = gateLocked ? '继续主线（还需' + gateNeed + '天）' : '继续主线';
     mainBtn.addEventListener('click', () => continueMainline());
     const shopBtn = document.createElement('button');
     shopBtn.className = 'map-btn';
     shopBtn.textContent = '商店';
-    shopBtn.addEventListener('click', () => showShopPanel());
+    shopBtn.addEventListener('click', () => { if (guardFreePhase('商店')) showShopPanel(); });
     const equipBtn = document.createElement('button');
     equipBtn.className = 'map-btn';
     equipBtn.textContent = '装备';
-    equipBtn.addEventListener('click', () => showEquipPanel());
+    equipBtn.addEventListener('click', () => { if (guardFreePhase('装备')) showEquipPanel(); });
     actions.appendChild(restBtn);
     actions.appendChild(mainBtn);
     actions.appendChild(shopBtn);
@@ -1585,9 +1729,21 @@ const App = (() => {
     return { overlay, box, esc, close };
   }
 
+  // 自由行动守卫：商店/装备面板仅允许在自由行动（EXPLORE/MENU）阶段打开。
+  // 战斗/对话中打开会破坏流程并允许战斗中刷资源。返回 true 表示放行。
+  function guardFreePhase(what) {
+    if (typeof Game === 'undefined' || !Game.getPhase || !Game.PHASES) return true; // 无 Game（旧环境/测试）放行
+    const p = Game.getPhase();
+    if (p === Game.PHASES.EXPLORE || p === Game.PHASES.MENU) return true;
+    const state = p === Game.PHASES.BATTLE ? '战斗' : (p === Game.PHASES.DIALOGUE ? '对话' : '当前状态');
+    showToast(what + '无法在' + state + '中打开', 'warn');
+    return false;
+  }
+
   // 商店面板：买入（含羽衣折扣）+ 卖出（半价），显示金币
   function showShopPanel() {
     if (typeof Data === 'undefined' || !Data.getAllShop) return;
+    if (!guardFreePhase('商店')) return;
     const S = Engine.getState();
     const m = openModal();
     const disc = S.shopDiscount || 0;
@@ -1664,6 +1820,7 @@ const App = (() => {
   // 装备面板：防具/饰品各一槽，显示属性加成
   function showEquipPanel() {
     if (typeof Data === 'undefined' || !Data.EQUIPMENT) return;
+    if (!guardFreePhase('装备')) return;
     const m = openModal();
     const render = () => {
       const st = Engine.getState();
@@ -1733,13 +1890,29 @@ const App = (() => {
   function continueMainline() {
     if (typeof Game === 'undefined' || !Game.getChapter) { showDialog('主线功能待接入'); return; }
     const ch = Game.getChapter();
-    // 通过 Game.advanceMainline 走天数门槛：未解锁返回 {unlocked:false}，不跑剧情
+    // 门槛前置检查：未解锁时提示"还需X天"并返回，不触发剧情
+    if (typeof Game.getMainlineGate === 'function') {
+      const gate = Game.getMainlineGate(ch);
+      if (gate && !gate.unlocked) {
+        showDialog('主线尚未解锁：还需 ' + gate.need + ' 天可推进。');
+        return;
+      }
+    } else if (typeof Game.isMainlineUnlocked === 'function') {
+      const gate = Game.isMainlineUnlocked(ch, 1);
+      if (gate && !gate.unlocked) {
+        showDialog('主线尚未解锁：还需 ' + gate.need + ' 天可推进。');
+        return;
+      }
+    }
+    // 通过 Game.advanceMainline 走天数门槛推进
     if (typeof Game.advanceMainline === 'function') {
       if (typeof Game.setPhase !== 'undefined' && Game.PHASES) {
         Game.setPhase(Game.PHASES.DIALOGUE);
       }
-      const st = Game.advanceMainline(ch, 1);
-      // 未解锁时 Game.advanceMainline 已通过 view.log 弹出对话框提示，这里无需重复 toast
+      const req = (typeof Game.getMainlineGate === 'function')
+        ? (Game.getMainlineGate(ch) || {}).requireDays : 1;
+      const st = Game.advanceMainline(ch, req);
+      // 未解锁时 Game.advanceMainline 已通过 view.log 提示，这里无需重复 toast
       return;
     }
     // 旧路径兜底
@@ -1768,7 +1941,7 @@ const App = (() => {
     }
   }
 
-  return { init, runScene, startBattle, showBattle, battleLog, promptAction, promptItem, setTurnActive,
+  return { init, runScene, startBattle, showBattle, battleLog, promptAction, promptItem, setTurnActive, getActionList,
     enemyEl, playerEl, shakeEnemy, shakePlayer, shakeHard, flashCrit, transformFlash, pulseEro,
     setCombo, setEnemySprite, updateEnemyBar, renderBattleBars, updateBattleState, dieAndRetry,
     showDialog, hideDialog, showEnding, scheduleEnding, wait, updateHUD, renderStatus, updateSidePanel, setTypeSpeed };
