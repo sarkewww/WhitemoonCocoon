@@ -191,6 +191,13 @@ const Battle = (() => {
         spec = Object.assign({}, DEFAULT_WEAK_ENEMY, { id: specOrId, name: specOrId });
       }
     }
+    // 防御 undefined/null/缺字段：一律回退默认弱怪，杜绝 TypeError
+    if (typeof spec !== 'object' || spec === null || typeof spec.hp !== 'number' || !isFinite(spec.hp)) {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[battle] makeEnemy 收到无效配置，回退默认弱怪', specOrId);
+      }
+      spec = Object.assign({}, DEFAULT_WEAK_ENEMY);
+    }
     const dm = Engine.getDifficultyMult ? Engine.getDifficultyMult() : { enemyHp:1, enemyAtk:1, eroMult:1 };
     const hp = Math.round(spec.hp * dm.enemyHp);
     return {
@@ -229,16 +236,30 @@ const Battle = (() => {
     }
   }
 
+  // ---- 弱点/相克倍率（玩家技能命中敌人 weak 时生效）----
+  const WEAK_MULT = { strike: 1.5, pure: 1.8, erosion: 1.8, ultimate: 2.0 };
+
   // ---- 伤害计算 ----
-  function computeDamage(actor, target, { mult=1, isSkill=false, ignoreDef=false, isCrit=null }={}) {
+  function computeDamage(actor, target, { mult=1, isSkill=false, ignoreDef=false, isCrit=null, skillType=null }={}) {
     let base = actor.atk * mult;
     let crit = isCrit;
     if (crit === null) crit = Math.random() < (isSkill ? 0.12 : 0.08);
+    const weakHit = !!(skillType && target && target.weak && skillType === target.weak && WEAK_MULT[skillType]);
+    if (weakHit) base *= WEAK_MULT[skillType];
     if (!ignoreDef) base = Math.max(1, base - target.def*0.55);
     base *= (0.9 + Math.random()*0.25);
     base += actor.level*0.8;
     if (crit) base *= 1.9;
-    return { dmg: Math.max(1, Math.round(base)), crit };
+    return { dmg: Math.max(1, Math.round(base)), crit, weakHit };
+  }
+
+  // ---- 敌人→玩家 伤害：百分比 + 线性 混合减伤（让防御在后期仍有收益）----
+  function enemyHit(atk, roll, plDef, guarding, linCoef) {
+    const K = 50;
+    const edef = guarding ? plDef + 15 : plDef;
+    const pct = 1 - edef/(edef + K);
+    const linear = plDef * (guarding ? linCoef*2.6 : linCoef);
+    return Math.max(1, Math.round(atk*roll*pct - linear));
   }
 
   // ---- 敌人AI ----
@@ -319,16 +340,16 @@ const Battle = (() => {
       }
       else if (action === 'strike') {
         Sfx.playerHit();
-        const r = computeDamage(pl, enemy, { mult: (buff?1.5:1.0) });
+        const r = computeDamage(pl, enemy, { mult: (buff?1.5:1.0), skillType:'strike' });
         buff = false;
         enemy.hp = Math.max(0, enemy.hp - r.dmg);
         S.damageDealt += r.dmg;
         combo++;
         UI.setCombo(combo);
-        S.sp = Engine.clamp(S.sp + 8, 0, S.maxSp);
+        S.sp = Engine.clamp(S.sp + 5, 0, S.maxSp);
         UI.shakeEnemy();
         FX.burstCenter(UI.enemyEl(), { color:'#7fd8ff', count:14, speed:200 });
-        UI.battleLog(`绫音挥出苍月斩—— 「${r.crit?'会心一击！':'命中'}」 ${r.dmg} 点伤害。`, r.crit?'crit':'player-hit');
+        UI.battleLog(`绫音挥出苍月斩—— 「${r.crit?'会心一击！':'命中'}」 ${r.dmg} 点伤害${r.weakHit?'（弱点克制！）':''}。`, r.crit?'crit':'player-hit');
         if (r.crit) { Sfx.crit(); UI.flashCrit(); }
         spawnDmg(UI.enemyEl(), r.dmg, r.crit?'crit':'blue');
         UI.updateEnemyBar(enemy);
@@ -338,15 +359,15 @@ const Battle = (() => {
         if (S.sp < 20) { UI.battleLog('灵力不足，无法释放净化之矢。','info'); Sfx.click(); return playerPhase(); }
         S.sp -= 20;
         Sfx.skill();
-        const r = computeDamage(pl, enemy, { mult: 1.7, isSkill:true });
+        const r = computeDamage(pl, enemy, { mult: 1.7, isSkill:true, skillType:'pure' });
         enemy.hp = Math.max(0, enemy.hp - r.dmg);
         S.damageDealt += r.dmg;
         combo++;
         UI.setCombo(combo);
-        S.sp = Engine.clamp(S.sp + 4, 0, S.maxSp);
+        S.sp = Engine.clamp(S.sp + 2, 0, S.maxSp);
         UI.shakeEnemy(true);
         FX.burstCenter(UI.enemyEl(), { color:'#c78fff', count:26, speed:260 });
-        UI.battleLog(`净化之矢贯穿魔物—— 「${r.crit?'会心！':'命中'}」 ${r.dmg} 点伤害。`, r.crit?'crit':'player-hit');
+        UI.battleLog(`净化之矢贯穿魔物—— 「${r.crit?'会心！':'命中'}」 ${r.dmg} 点伤害${r.weakHit?'（弱点克制！）':''}。`, r.crit?'crit':'player-hit');
         if (r.crit) { Sfx.crit(); UI.flashCrit(); }
         spawnDmg(UI.enemyEl(), r.dmg, r.crit?'crit':'purple');
         UI.updateEnemyBar(enemy);
@@ -354,8 +375,10 @@ const Battle = (() => {
       }
       else if (action === 'erosion') {
         if (S.ero >= 100) { UI.battleLog('侵蚀已达临界，无法再调用禁忌之力。','info'); return playerPhase(); }
+        if (S.sp < 25) { UI.battleLog('灵力不足，无法催动蚀心之触。','info'); Sfx.click(); return playerPhase(); }
+        S.sp -= 25;
         Sfx.ero();
-        const r = computeDamage(pl, enemy, { mult: 2.6, isSkill:true, ignoreDef:true });
+        const r = computeDamage(pl, enemy, { mult: 2.4, isSkill:true, ignoreDef:true, skillType:'erosion' });
         enemy.hp = Math.max(0, enemy.hp - r.dmg);
         S.damageDealt += r.dmg;
         S.ero = Engine.clamp(S.ero + 8, 0, 100);
@@ -364,7 +387,7 @@ const Battle = (() => {
         UI.shakeEnemy(true);
         UI.shakeHard();
         FX.burstCenter(UI.enemyEl(), { color:'#ff5f6f', count:34, speed:320, size:4 });
-        UI.battleLog(`蚀心之触从她体内涌出—— 魔物被撕裂！ ${r.dmg} 点伤害！ 侵蚀 +8。`, 'big');
+        UI.battleLog(`蚀心之触从她体内涌出—— 魔物被撕裂！ ${r.dmg} 点伤害${r.weakHit?'（弱点克制！）':''}！ 侵蚀 +8。`, 'big');
         if (r.crit) { Sfx.crit(); UI.flashCrit(); }
         spawnDmg(UI.enemyEl(), r.dmg, 'crit');
         UI.updateEnemyBar(enemy);
@@ -386,7 +409,7 @@ const Battle = (() => {
         ultimateReady = false;
         Sfx.ultimate();
         UI.transformFlash();
-        const r = computeDamage(pl, enemy, { mult: 3.8, isSkill:true, ignoreDef:true, isCrit:true });
+        const r = computeDamage(pl, enemy, { mult: 3.8, isSkill:true, ignoreDef:true, isCrit:true, skillType:'ultimate' });
         enemy.hp = Math.max(0, enemy.hp - r.dmg);
         S.damageDealt += r.dmg;
         combo += 3;
@@ -452,21 +475,21 @@ const Battle = (() => {
       let dmg = 0;
       switch(act) {
         case 'claw': {
-          dmg = Math.max(1, Math.round(enemy.atk*(0.85+Math.random()*0.4) - (guarding?pl.def*1.6:pl.def*0.6)));
+          dmg = enemyHit(enemy.atk, 0.85+Math.random()*0.4, pl.def, guarding, 0.42);
           break;
         }
         case 'tentacle': {
-          dmg = Math.max(1, Math.round(enemy.atk*1.15*(0.85+Math.random()*0.3) - (guarding?pl.def*1.8:pl.def*0.7)));
+          dmg = enemyHit(enemy.atk*1.15, 0.85+Math.random()*0.3, pl.def, guarding, 0.5);
           break;
         }
         case 'bind': {
-          dmg = Math.max(1, Math.round(enemy.atk*0.6 - pl.def*0.3));
+          dmg = enemyHit(enemy.atk*0.6, 1, pl.def, false, 0.21);
           bindTurns = (guarding || bindTurns > 0) ? 0 : 1;   // 上限1回合，防连续软锁
           if (bindTurns) UI.battleLog('触手缠住了她的四肢！ 下回合无法行动！', 'erosion');
           break;
         }
         case 'lifesteal': {
-          dmg = Math.max(1, Math.round(enemy.atk*0.9 - pl.def*0.5));
+          dmg = enemyHit(enemy.atk*0.9, 1, pl.def, false, 0.35);
           const leech = Math.round(dmg*0.5);
           enemy.hp = Math.min(enemy.maxHp, enemy.hp + leech);
           UI.battleLog(enemy.name+' 汲取了 '+leech+' 点生命。', 'erosion');
@@ -474,7 +497,7 @@ const Battle = (() => {
           break;
         }
         case 'erosionBurst': {
-          dmg = Math.max(1, Math.round(enemy.atk*0.7 - pl.def*0.2));
+          dmg = enemyHit(enemy.atk*0.7, 1, pl.def, false, 0.14);
           S.ero = Engine.clamp(S.ero + 3, 0, 100);
           UI.battleLog('侵蚀的气息渗入身体—— 侵蚀 +3！', 'erosion');
           break;

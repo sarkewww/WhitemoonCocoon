@@ -46,6 +46,9 @@ const Engine = (() => {
       materials: {},       // 合成材料 {matId:count}
       recipes: {},         // 已解锁合成配方 {recipeId:true}
       weaponLevel: 1,      // 武器强化等级
+      money: 500,          // 货币（金币）
+      armorId: null,       // 防具槽（装备 id）
+      accessoryId: null,   // 饰品槽（装备 id）
       statPts: 0,          // 属性点（未分配）
       stats: { str:1, vit:1, spi:1, agi:1 },  // 力量/体力/灵力/敏捷
       doneScenes: {},      // 已执行过 onEnter 的场景
@@ -70,6 +73,7 @@ const Engine = (() => {
     s.maxHp = baseStats.maxHp; s.hp = baseStats.maxHp;
     s.maxSp = baseStats.maxSp; s.sp = baseStats.maxSp;
     s.atk = baseStats.atk; s.def = baseStats.def; s.spd = baseStats.spd;
+    applyBonuses(s);       // 装备/羁绊被动加成（初始为 0）
     return s;
   }
 
@@ -112,6 +116,9 @@ const Engine = (() => {
     if (!out.materials || typeof out.materials !== 'object') out.materials = {};
     if (!out.recipes || typeof out.recipes !== 'object') out.recipes = {};
     if (typeof out.weaponLevel !== 'number' || isNaN(out.weaponLevel) || out.weaponLevel < 1) out.weaponLevel = 1;
+    if (typeof out.money !== 'number' || isNaN(out.money) || out.money < 0) out.money = 500;
+    if (typeof out.armorId !== 'string' && out.armorId !== null) out.armorId = null;
+    if (typeof out.accessoryId !== 'string' && out.accessoryId !== null) out.accessoryId = null;
     if (!out.doneScenes || typeof out.doneScenes !== 'object' || Array.isArray(out.doneScenes)) out.doneScenes = {};
     if (!out.trust || typeof out.trust !== 'object') out.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
     else { out.trust.yuki = out.trust.yuki||0; out.trust.suzu = out.trust.suzu||0; out.trust.hagoromo = out.trust.hagoromo||0; }
@@ -260,6 +267,61 @@ const Engine = (() => {
     return st.trust[char] ?? 0;
   }
   function getTrustAll() { return Object.freeze({...getState().trust}); }
+
+  // ---- 羁绊等级（Confidant）----
+  // 等级阈值：R1 0 / R2 30 / R3 60 / R4 80
+  const TRUST_RANK_THRESHOLDS = [
+    { rank: 1, min: 0 },
+    { rank: 2, min: 30 },
+    { rank: 3, min: 60 },
+    { rank: 4, min: 80 },
+  ];
+  // 各角色各等级解锁的被动加成（数值加成经 recalcStats 合入 S.atk/def/maxHp，比率类暴露为 S.critChance 等）
+  const CONFIDANT_BONUS_TABLE = {
+    yuki: {           // 雪：守护 / 减伤
+      1: {},
+      2: { def: 2, dmgReduction: 0.05 },
+      3: { def: 4, dmgReduction: 0.08, maxHp: 10 },
+      4: { def: 6, dmgReduction: 0.12, maxHp: 20 },
+    },
+    suzu: {           // 铃：锋锐 / 暴击
+      1: {},
+      2: { atk: 2, critChance: 0.05 },
+      3: { atk: 4, critChance: 0.08 },
+      4: { atk: 6, critChance: 0.12 },
+    },
+    hagoromo: {       // 羽衣：巧匠 / 折扣
+      1: {},
+      2: { craftDiscount: 0.10, shopDiscount: 0.05 },
+      3: { craftDiscount: 0.20, shopDiscount: 0.10 },
+      4: { craftDiscount: 0.30, shopDiscount: 0.15 },
+    },
+  };
+  const CONFIDANT_CHARS = ['yuki', 'suzu', 'hagoromo'];
+
+  function trustRank(trustValue) {
+    const v = clamp(trustValue || 0, 0, 100);
+    let r = 1;
+    for (const t of TRUST_RANK_THRESHOLDS) if (v >= t.min) r = t.rank;
+    return r;
+  }
+  function getTrustRank(char) { return trustRank(getTrust(char)); }
+  function confidantBonus(S) {
+    S = S || getState();
+    const per = {}; const ranks = {};
+    const total = { atk:0, def:0, maxHp:0, spd:0, critChance:0, dmgReduction:0, craftDiscount:0, shopDiscount:0 };
+    for (const c of CONFIDANT_CHARS) {
+      const v = (S.trust && S.trust[c]) || 0;
+      const r = trustRank(v);
+      ranks[c] = r;
+      per[c] = Object.assign({ rank: r }, CONFIDANT_BONUS_TABLE[c][r]);
+      for (const k of Object.keys(per[c])) {
+        if (k !== 'rank' && typeof per[c][k] === 'number') total[k] += per[c][k];
+      }
+    }
+    return { ranks, yuki: per.yuki, suzu: per.suzu, hagoromo: per.hagoromo, total };
+  }
+  function getConfidantBonus() { return confidantBonus(getState()); }
   function addAnchor(n) { getState().anchor = clamp((getState().anchor||50) + n, 0, 100); }
   function getAnchor() { return getState().anchor ?? 50; }
   function addStat(k, n) {
@@ -269,6 +331,149 @@ const Engine = (() => {
     st.stats[k] = (st.stats[k]||0) + n;
     recalcStats();
     return true;
+  }
+
+  // ---- 装备 / 货币 / 商店 ----
+  function equipBonusOf(id) {
+    if (!id) return null;
+    const D = (typeof Data !== 'undefined' && Data) ? Data : null;
+    if (!D || !D.getEquipment) return null;
+    return D.getEquipment(id);
+  }
+  function equipBonuses(st) {
+    const b = { atk:0, def:0, spd:0, maxHp:0 };
+    for (const id of [st.armorId, st.accessoryId]) {
+      const g = equipBonusOf(id);
+      if (!g) continue;
+      b.atk += g.atkBonus||0;
+      b.def += g.defBonus||0;
+      b.spd += g.spdBonus||0;
+      b.maxHp += g.maxHpBonus||0;
+    }
+    return b;
+  }
+  function computeBonuses(st) {
+    const eq = equipBonuses(st);
+    const cb = confidantBonus(st).total;
+    return {
+      atk: (eq.atk||0) + (cb.atk||0),
+      def: (eq.def||0) + (cb.def||0),
+      spd: (eq.spd||0) + (cb.spd||0),
+      maxHp: (eq.maxHp||0) + (cb.maxHp||0),
+      dmgReduction: cb.dmgReduction||0,
+      critChance: cb.critChance||0,
+      craftDiscount: cb.craftDiscount||0,
+      shopDiscount: cb.shopDiscount||0,
+    };
+  }
+  function applyBonuses(st) {
+    st = st || getState();
+    const b = computeBonuses(st);
+    st.atk = (st.atk||0) + b.atk;
+    st.def = (st.def||0) + b.def;
+    st.spd = (st.spd||0) + b.spd;
+    st.maxHp = (st.maxHp||0) + b.maxHp;
+    st.dmgReduction = b.dmgReduction;
+    st.critChance = b.critChance;
+    st.craftDiscount = b.craftDiscount;
+    st.shopDiscount = b.shopDiscount;
+    return b;
+  }
+  function getMoney() { return getState().money || 0; }
+  function addMoney(n) {
+    const st = getState();
+    st.money = Math.max(0, (st.money||0) + n);
+    return st.money;
+  }
+  function spendMoney(n) {
+    const st = getState();
+    if ((st.money||0) < n) return false;
+    st.money -= n;
+    return true;
+  }
+  // 物品类型：material → 材料；其余（item/equipment）→ 背包
+  function itemKindOf(id) {
+    const D = (typeof Data !== 'undefined' && Data) ? Data : null;
+    if (!D) return null;
+    if (D.getMaterial && D.getMaterial(id)) return 'material';
+    if (D.getItem && D.getItem(id)) return 'item';
+    if (D.getEquipment && D.getEquipment(id)) return 'equipment';
+    return null;
+  }
+  function priceOf(id) {
+    const D = (typeof Data !== 'undefined' && Data) ? Data : null;
+    if (!D) return 0;
+    const it = D.getItem && D.getItem(id);
+    if (it && it.price != null) return it.price;
+    const m = D.getMaterial && D.getMaterial(id);
+    if (m && m.price != null) return m.price;
+    const e = D.getEquipment && D.getEquipment(id);
+    if (e && e.price != null) return e.price;
+    return 0;
+  }
+  const SELL_RATIO = 0.5;
+  function sellPriceOf(id) {
+    const p = priceOf(id);
+    return p > 0 ? Math.max(1, Math.floor(p * SELL_RATIO)) : 0;
+  }
+  function buyItem(id, qty=1) {
+    qty = Math.max(1, Math.floor(qty));
+    const kind = itemKindOf(id);
+    const price = priceOf(id);
+    if (!kind || price <= 0) return { ok:false, msg:'未知物品' };
+    const cost = price * qty;
+    const st = getState();
+    if ((st.money||0) < cost) return { ok:false, msg:'金币不足', need: cost, money: st.money };
+    st.money -= cost;
+    if (kind === 'material') addMaterial(id, qty);
+    else addItem(id, qty);
+    return { ok:true, cost, qty, item:id, kind };
+  }
+  function sellItem(id, qty=1) {
+    qty = Math.max(1, Math.floor(qty));
+    const kind = itemKindOf(id);
+    const price = sellPriceOf(id);
+    if (!kind || price <= 0) return { ok:false, msg:'无法出售' };
+    const st = getState();
+    if (kind === 'material') {
+      if (!hasMaterial(id, qty)) return { ok:false, msg:'材料不足' };
+      removeMaterial(id, qty);
+    } else {
+      if (!hasItem(id, qty)) return { ok:false, msg:'物品不足' };
+      removeItem(id, qty);
+    }
+    st.money = (st.money||0) + price * qty;
+    return { ok:true, gained: price*qty, qty, item:id, kind };
+  }
+  function equipArmor(id) {
+    const g = equipBonusOf(id);
+    if (!g) return { ok:false, msg:'未知装备' };
+    if (g.kind !== 'armor') return { ok:false, msg:'不是防具' };
+    if (!hasItem(id, 1)) return { ok:false, msg:'背包中没有该装备' };
+    getState().armorId = id;
+    recalcStats();
+    return { ok:true, slot:'armor', id };
+  }
+  function equipAccessory(id) {
+    const g = equipBonusOf(id);
+    if (!g) return { ok:false, msg:'未知装备' };
+    if (g.kind !== 'accessory') return { ok:false, msg:'不是饰品' };
+    if (!hasItem(id, 1)) return { ok:false, msg:'背包中没有该装备' };
+    getState().accessoryId = id;
+    recalcStats();
+    return { ok:true, slot:'accessory', id };
+  }
+  function unequip(slot) {
+    const st = getState();
+    if (slot === 'armor') st.armorId = null;
+    else if (slot === 'accessory') st.accessoryId = null;
+    else return { ok:false, msg:'未知槽位' };
+    recalcStats();
+    return { ok:true, slot };
+  }
+  function getEquipped() {
+    const st = getState();
+    return { armor: st.armorId || null, accessory: st.accessoryId || null };
   }
   function recalcStats(st) {
     st = st || getState();
@@ -295,6 +500,7 @@ const Engine = (() => {
     st.atk = base.atk;
     st.def = base.def;
     st.spd = base.spd;
+    applyBonuses(st);   // 装备 + 羁绊被动（数值加在难度倍率之后）
     if (st.hp > st.maxHp) st.hp = st.maxHp;
     if (st.sp > st.maxSp) st.sp = st.maxSp;
   }
@@ -309,11 +515,20 @@ const Engine = (() => {
   }
   function getStats() {
     const st = getState();
+    const cb = confidantBonus(st);
     return {
       hp: st.hp, maxHp: st.maxHp, sp: st.sp, maxSp: st.maxSp,
       atk: st.atk, def: st.def, spd: st.spd,
       level: st.level, statPts: st.statPts, stats: st.stats, weaponLevel: st.weaponLevel,
       ero: st.ero,
+      money: st.money || 0,
+      armorId: st.armorId || null, accessoryId: st.accessoryId || null,
+      trustRanks: cb.ranks,
+      confidantBonus: cb,
+      dmgReduction: st.dmgReduction || 0,
+      critChance: st.critChance || 0,
+      craftDiscount: st.craftDiscount || 0,
+      shopDiscount: st.shopDiscount || 0,
     };
   }
 
@@ -339,8 +554,10 @@ const Engine = (() => {
     addMaterial, hasMaterial, removeMaterial,
     unlockRecipe, hasRecipe, craftRecipe,
     addStatPts, addStat, recalcStats, upgradeWeapon, getStats,
-    addTrust, getTrust, getTrustAll,
+    addTrust, getTrust, getTrustAll, trustRank, getTrustRank, confidantBonus, getConfidantBonus,
     addAnchor, getAnchor,
+    getMoney, addMoney, spendMoney, buyItem, sellItem,
+    equipArmor, equipAccessory, unequip, getEquipped,
   };
 })();
 

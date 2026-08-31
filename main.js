@@ -24,12 +24,51 @@ const App = (() => {
   let textSkip = false;
   let endTimer = null;
   let _mapDrag = null;
+  let _toastTimer = null;
 
   // 自然融入：章节开头场景 → 对应章节地图（RPG 自由行动层）
   const CHAPTER_MAP_ENTRY = { 'chapter1_1': 1, 'chapter2_1': 2, 'chapter3_1': 3 };
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
+  }
+
+  // 当前时段行动点上限（DAY_AP=2 / NIGHT_AP=1，取 DayCycle 权威值）
+  function maxAPOf() {
+    const S = Engine.getState();
+    if (typeof DayCycle !== 'undefined' && DayCycle.maxAP) return DayCycle.maxAP(S);
+    return (S && S.phase === 'night') ? 1 : 2;
+  }
+
+  // 顶部 toast 提示：不阻塞操作的短暂反馈（AP 不足 / 每日限量 / 主线未解锁等）
+  function showToast(msg, type) {
+    let el = document.getElementById('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      el.className = 'toast hidden';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.className = 'toast' + (type ? ' toast-' + type : '');
+    el.classList.remove('hidden');
+    el.classList.remove('toast-show');
+    void el.offsetWidth;
+    el.classList.add('toast-show');
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => {
+      el.classList.remove('toast-show');
+      setTimeout(() => el.classList.add('hidden'), 350);
+    }, 2400);
+  }
+
+  // 地图行动点徽章闪烁（AP 不足/耗尽时的视觉警示）
+  function flashAPBadge() {
+    const badge = document.getElementById('mapApBadge');
+    if (!badge) return;
+    badge.classList.remove('ap-flash');
+    void badge.offsetWidth;
+    badge.classList.add('ap-flash');
   }
 
   // ===== 轻触检测：区分"点击"与"滑动" =====
@@ -394,9 +433,37 @@ const App = (() => {
       }).join(' ');
       return `<div class="row"><button class="save-btn craft-btn" data-recipe="${k}">${r.name}</button></div><div class="row" style="font-size:10px;color:var(--fg-dim);">${costStr}</div>`;
     }).join('');
+
+    // 羁绊等级 + 被动加成说明（R1-R4）
+    const cb = (typeof Engine !== 'undefined' && Engine.confidantBonus) ? Engine.confidantBonus(S) : null;
+    const RANK_NAMES = { 1:'R1', 2:'R2', 3:'R3', 4:'R4' };
+    const fmtBonus = (b) => {
+      if (!b) return '无加成';
+      const parts = [];
+      if (b.def) parts.push('防御+' + b.def);
+      if (b.atk) parts.push('攻击+' + b.atk);
+      if (b.maxHp) parts.push('生命+' + b.maxHp);
+      if (b.spd) parts.push('敏捷+' + b.spd);
+      if (b.dmgReduction) parts.push('减伤' + Math.round(b.dmgReduction * 100) + '%');
+      if (b.critChance) parts.push('暴击' + Math.round(b.critChance * 100) + '%');
+      if (b.craftDiscount) parts.push('合成-' + Math.round(b.craftDiscount * 100) + '%');
+      if (b.shopDiscount) parts.push('商店-' + Math.round(b.shopDiscount * 100) + '%');
+      return parts.join(' ');
+    };
+    const CHAR_NAMES = { yuki: '雪', suzu: '铃', hagoromo: '羽衣' };
+    const bondHtml = cb ? ['yuki', 'suzu', 'hagoromo'].map(c => {
+      const v = (S.trust && S.trust[c]) || 0;
+      const b = cb[c] || {};
+      const rn = RANK_NAMES[b.rank] || 'R1';
+      const tip = (b.rank || 1) < 4 ? ' · 下一级 R' + ((b.rank||1)+1) + ' 需信任 ' + [30,60,80][b.rank] : ' · 已达最高';
+      return '<div class="row"><span class="k">' + CHAR_NAMES[c] + '</span><span class="v">' + v + ' (' + rn + ')</span></div>' +
+        '<div class="row" style="font-size:10px;color:var(--fg-dim);">' + fmtBonus(b) + tip + '</div>';
+    }).join('') : '';
+
     const html = [
       '<div class="row"><span class="k">姓名</span><span class="v">'+esc(S.name)+'</span></div>',
       '<div class="row"><span class="k">Lv.</span><span class="v">'+S.level+'</span><span class="k">章</span><span class="v">'+ch+'</span></div>',
+      '<div class="row"><span class="k">金币</span><span class="v">¥'+(S.money||0)+'</span></div>',
       '<div class="sec">── 状态 ──</div>',
       '<div class="row"><span class="k">HP</span><span class="v">'+S.hp+'/'+S.maxHp+'</span></div>',
       '<div class="row"><span class="k">SP</span><span class="v">'+S.sp+'/'+S.maxSp+'</span></div>',
@@ -406,9 +473,9 @@ const App = (() => {
       '<div class="sec">── 技能 ──</div>',
       S.skills.map(s => '<div class="row"><span class="k">·</span><span class="v gray">'+Battle.getActionKey(s)+'</span></div>').join(''),
       '<div class="sec">── 羁绊 ──</div>' +
-      '<div class="row"><span class="k">雪</span><span class="v">'+(S.trust&&S.trust.yuki||0)+'</span><span class="k">铃</span><span class="v">'+(S.trust&&S.trust.suzu||0)+'</span><span class="k">羽衣</span><span class="v">'+(S.trust&&S.trust.hagoromo||0)+'</span></div>' +
+      bondHtml +
       '<div class="row"><span class="k">锚点</span><span class="v">'+(S.anchor??50)+'</span>' +
-      (!mapEl || mapEl.classList.contains('hidden') ? '' : '<span class="k">日程</span><span class="v">第'+(S.day||1)+'天 · '+((S.phase==='night')?'夜晚':'白天')+' · AP '+(S.ap||0)+'</span>') +
+      (!mapEl || mapEl.classList.contains('hidden') ? '' : '<span class="k">日程</span><span class="v">第'+(S.day||1)+'天 · '+((S.phase==='night')?'夜晚':'白天')+' · AP '+(S.ap||0)+'/'+maxAPOf()+'</span>') +
       '</div>',
       '<div class="sec">── 道具 ──</div>',
       inv || '<div class="row"><span class="k">·</span><span class="v gray">空</span></div>',
@@ -423,6 +490,9 @@ const App = (() => {
       '<div class="sec">── 强化 ──</div>' +
       '<div class="row"><button class="save-btn" data-stat="weapon">强化武器 (当前 +'+(S.weaponLevel||1)+')</button></div>' +
       '<div class="row" style="font-size:10px;color:var(--fg-dim);">需暗蚀结晶 ×'+(S.weaponLevel||1)*2+'</div>' +
+      '<div class="sec">── 商店 ──</div>' +
+      '<div class="row"><button class="save-btn" data-sys="shop">商店（买入/卖出）</button></div>' +
+      '<div class="row"><button class="save-btn" data-sys="equip">装备（防具/饰品）</button></div>' +
       '<div class="sec">── 系统 ──</div>' +
       '<div class="row"><button class="save-btn" data-sys="save">保存</button></div>' +
       '<div class="row"><button class="save-btn" data-sys="load">读取</button></div>',
@@ -466,6 +536,8 @@ const App = (() => {
           if (Engine.hasAuto()) { Engine.loadAuto(); showDialog('读档完成。'); togglePanel(false); choiceLock = false; if (!continueFromSavedScene(Engine.getState().scene)) { runScene(Engine.getState().scene); } }
           else { showDialog('没有存档。'); }
         }
+        else if (b.dataset.sys === 'shop') { togglePanel(false); setTimeout(() => showShopPanel(), 50); }
+        else if (b.dataset.sys === 'equip') { togglePanel(false); setTimeout(() => showEquipPanel(), 50); }
       });
     });
   }
@@ -1149,7 +1221,9 @@ const App = (() => {
     const ap = dayInfo ? dayInfo.ap : 0;
 
     if (mapHead) {
-      mapHead.innerHTML = '<span class="map-title">第' + ch + '章 · 夜见市</span><span class="map-info">第' + day + '天 · ' + phaseName + ' · 行动点 ' + ap + '</span>';
+      const apWarn = ap <= 0 ? ' ap-warn' : '';
+      mapHead.innerHTML = '<span class="map-title">第' + ch + '章 · 夜见市</span><span class="map-info">第' + day + '天 · ' + phaseName + '</span>' +
+        '<span id="mapApBadge" class="map-ap' + apWarn + '">AP ' + ap + '/' + maxAPOf() + '</span>';
     }
 
     const svg = document.getElementById('mapSvg') || mapSvg;
@@ -1232,7 +1306,15 @@ const App = (() => {
         if (l.id === curLoc) {
           onCurrentLocClick(l);
         } else if (typeof Game !== 'undefined' && Game.moveTo) {
-          Game.moveTo(l.id);
+          const ok = Game.moveTo(l.id);
+          // AP 不足时给出反馈
+          if (ok === false) {
+            const S2 = Engine.getState();
+            if (S2 && typeof S2.ap === 'number' && S2.ap <= 0) {
+              showToast('行动点已耗尽，休息或等次日再行动', 'warn');
+              flashAPBadge();
+            }
+          }
         }
       });
       nodesEl.appendChild(btn);
@@ -1265,7 +1347,25 @@ const App = (() => {
     const S = Engine.getState();
     const ev = World.rollEvent(S.chapter, loc.id, S.phase || 'day', S);
     if (ev) {
-      Game.fireAt(loc.id);
+      // 每日限量检查：先于 AP 消耗给出提示
+      if (!ev.once && typeof DayCycle !== 'undefined' && DayCycle.canTriggerEvent) {
+        const limit = typeof Game !== 'undefined' && Game.DAILY_EVENT_LIMIT ? Game.DAILY_EVENT_LIMIT : 2;
+        const st = DayCycle.canTriggerEvent(S, ev.id || ev.scene || ev.enemy, limit);
+        if (!st.ok) {
+          showToast('今天的行动已耗尽（' + st.count + '/' + st.limit + '）', 'warn');
+          return;
+        }
+      }
+      const ok = Game.fireAt(loc.id);
+      if (ok === false) {
+        const S2 = Engine.getState();
+        if (S2 && typeof S2.ap === 'number' && S2.ap <= 0) {
+          showToast('行动点已耗尽，休息或等次日再行动', 'warn');
+          flashAPBadge();
+        } else {
+          showToast('现在无法触发事件', 'warn');
+        }
+      }
     } else {
       showDialog('这里没有事可做');
     }
@@ -1279,10 +1379,24 @@ const App = (() => {
     info.className = 'map-desc';
     const S = typeof Engine !== 'undefined' && Engine.getState();
     const ch = S && S.chapter;
-    const goalReady = typeof DayCycle !== 'undefined' && DayCycle.mainReady && S && ch &&
-      DayCycle.mainReady(S, ch, 1);
-    info.textContent = '行动点 ' + ap + ' · ' + phaseName + ' · 第' + day + '天' +
-      (goalReady ? ' · 主线已可推进' : ' · 休息/探索推进日程以解锁主线');
+    // 主线门槛：未解锁时显示还需天数
+    let gateText = '';
+    let gateLocked = false;
+    if (typeof Game !== 'undefined' && Game.isMainlineUnlocked && S && ch) {
+      const st = Game.isMainlineUnlocked(ch, 1);
+      if (st && !st.unlocked) {
+        gateLocked = true;
+        gateText = ' · 主线锁定：还需 ' + st.need + ' 天可推进';
+      } else {
+        gateText = ' · 主线已可推进';
+      }
+    } else {
+      const goalReady = typeof DayCycle !== 'undefined' && DayCycle.mainReady && S && ch &&
+        DayCycle.mainReady(S, ch, 1);
+      gateText = goalReady ? ' · 主线已可推进' : ' · 休息/探索推进日程以解锁主线';
+    }
+    info.textContent = '行动点 ' + ap + '/' + maxAPOf() + ' · ' + phaseName + ' · 第' + day + '天' + gateText;
+    if (gateLocked) info.classList.add('map-gate-locked');
     const actions = document.createElement('div');
     actions.id = 'mapActions';
     actions.className = 'map-actions';
@@ -1293,11 +1407,21 @@ const App = (() => {
       if (typeof Game !== 'undefined' && Game.passTime) Game.passTime();
     });
     const mainBtn = document.createElement('button');
-    mainBtn.className = 'map-btn';
-    mainBtn.textContent = '继续主线';
+    mainBtn.className = 'map-btn mainline-btn' + (gateLocked ? ' mainline-locked' : '');
+    mainBtn.textContent = gateLocked ? '继续主线（还需' + (Game.isMainlineUnlocked ? Game.isMainlineUnlocked(ch, 1).need : 0) + '天）' : '继续主线';
     mainBtn.addEventListener('click', () => continueMainline());
+    const shopBtn = document.createElement('button');
+    shopBtn.className = 'map-btn';
+    shopBtn.textContent = '商店';
+    shopBtn.addEventListener('click', () => showShopPanel());
+    const equipBtn = document.createElement('button');
+    equipBtn.className = 'map-btn';
+    equipBtn.textContent = '装备';
+    equipBtn.addEventListener('click', () => showEquipPanel());
     actions.appendChild(restBtn);
     actions.appendChild(mainBtn);
+    actions.appendChild(shopBtn);
+    actions.appendChild(equipBtn);
     // 车站：区域间唯一交通枢纽 —— 提供"旅行"按钮
     const inStation = typeof Game !== 'undefined' && Game.getCurrentLoc && Game.getCurrentLoc() === 'station';
     if (inStation) {
@@ -1442,13 +1566,186 @@ const App = (() => {
     });
   }
 
+  // ===== 通用模态框（商店/装备/羁绊等面板共用）=====
+  // 复用 showTravelPanel 的 overlay 风格；返回 { overlay, box, setContent, close }
+  function openModal() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:61;display:flex;align-items:center;justify-content:center;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--panel);border:1px solid var(--accent);padding:16px 20px;max-width:460px;width:min(90vw,460px);max-height:78vh;overflow-y:auto;color:var(--fg);font-family:var(--mono);font-size:13px;line-height:1.6;box-shadow:0 0 30px rgba(143,143,255,.25);';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const close = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    const esc = document.createElement('button');
+    esc.className = 'map-btn';
+    esc.textContent = '返回';
+    esc.style.cssText = 'display:block;width:100%;margin-top:12px;';
+    esc.addEventListener('click', close);
+    return { overlay, box, esc, close };
+  }
+
+  // 商店面板：买入（含羽衣折扣）+ 卖出（半价），显示金币
+  function showShopPanel() {
+    if (typeof Data === 'undefined' || !Data.getAllShop) return;
+    const S = Engine.getState();
+    const m = openModal();
+    const disc = S.shopDiscount || 0;
+    const render = () => {
+      const st = Engine.getState();
+      const money = st.money || 0;
+      const shop = Data.getAllShop();
+      const buyHtml = Object.keys(shop).map(id => {
+        const e = shop[id];
+        const def = (e.kind === 'material') ? Data.getMaterial(id) :
+          (e.kind === 'equipment' ? Data.getEquipment(id) : Data.getItem(id));
+        const eff = def && def.desc ? def.desc : '';
+        const price = Math.round(e.price * (1 - disc));
+        const owned = st.inventory.find(i => i.id === id);
+        return '<div class="shop-row"><div class="shop-info">' +
+          '<span class="shop-name">' + esc(e.name) + '</span>' +
+          '<span class="shop-eff">' + esc(eff) + '</span></div>' +
+          '<span class="shop-price">¥' + price + (disc > 0 ? ' <span class="shop-disc">-'+Math.round(disc*100)+'%</span>' : '') + '</span>' +
+          '<button class="save-btn shop-buy" data-id="' + esc(id) + '">买入</button>' +
+          (owned ? '<span class="shop-owned">×' + owned.count + '</span>' : '') +
+          '</div>';
+      }).join('');
+      // 卖出列表：背包道具/装备 + 材料
+      const sellRows = [];
+      for (const it of st.inventory) {
+        const def = Data.getItem(it.id) || Data.getEquipment(it.id);
+        if (!def) continue;
+        const sp = Data.getSellPrice(it.id);
+        if (sp <= 0) continue;
+        sellRows.push('<div class="shop-row"><span class="shop-name">' + esc(def.name) + ' ×' + it.count + '</span>' +
+          '<span class="shop-price">¥' + sp + '/个</span>' +
+          '<button class="save-btn shop-sell" data-id="' + esc(it.id) + '">卖出</button></div>');
+      }
+      for (const [mid, cnt] of Object.entries(st.materials || {})) {
+        const def = Data.getMaterial(mid);
+        if (!def) continue;
+        const sp = Data.getSellPrice(mid);
+        if (sp <= 0) continue;
+        sellRows.push('<div class="shop-row"><span class="shop-name">' + esc(def.name) + ' ×' + cnt + '</span>' +
+          '<span class="shop-price">¥' + sp + '/个</span>' +
+          '<button class="save-btn shop-sell" data-id="' + esc(mid) + '">卖出</button></div>');
+      }
+      m.box.innerHTML = '<div style="font-size:15px;color:var(--accent-hi);margin-bottom:6px;">商店</div>' +
+        '<div style="font-size:12px;color:var(--gold);margin-bottom:10px;">金币：¥' + money +
+        (disc > 0 ? ' <span style="color:var(--fg-dim);font-size:11px;">（羽衣折扣 ' + Math.round(disc * 100) + '%）</span>' : '') + '</div>' +
+        '<div style="font-size:12px;color:var(--fg-dim);margin:8px 0 4px;">── 购买 ──</div>' +
+        buyHtml +
+        (sellRows.length ? '<div style="font-size:12px;color:var(--fg-dim);margin:10px 0 4px;">── 出售（半价）──</div>' + sellRows.join('') : '') +
+        '<div style="color:var(--fg-dim);font-size:10px;margin-top:6px;">卖出价为买入价的 50%。</div>';
+      m.box.appendChild(m.esc);
+      bind(m.box);
+    };
+    const bind = (root) => {
+      root.querySelectorAll('.shop-buy').forEach(b => {
+        b.addEventListener('click', () => {
+          const r = Engine.buyItem(b.dataset.id, 1);
+          if (r.ok) showToast('购入成功：' + (Data.getItem(b.dataset.id)||Data.getEquipment(b.dataset.id)||Data.getMaterial(b.dataset.id)||{}).name);
+          else showToast('购买失败：' + (r.msg || '金币不足'), 'warn');
+          render();
+        });
+      });
+      root.querySelectorAll('.shop-sell').forEach(b => {
+        b.addEventListener('click', () => {
+          const r = Engine.sellItem(b.dataset.id, 1);
+          if (r.ok) showToast('售出成功 +¥' + r.gained);
+          else showToast('出售失败：' + (r.msg || ''), 'warn');
+          render();
+        });
+      });
+    };
+    render();
+  }
+
+  // 装备面板：防具/饰品各一槽，显示属性加成
+  function showEquipPanel() {
+    if (typeof Data === 'undefined' || !Data.EQUIPMENT) return;
+    const m = openModal();
+    const render = () => {
+      const st = Engine.getState();
+      const eq = Engine.getEquipped();
+      const S = Engine.getState();
+      const disc = S.shopDiscount || 0;
+      const bonusOf = (id) => {
+        const g = Data.getEquipment(id);
+        if (!g) return '';
+        const parts = [];
+        if (g.defBonus) parts.push('防御+' + g.defBonus);
+        if (g.atkBonus) parts.push('攻击+' + g.atkBonus);
+        if (g.spdBonus) parts.push('敏捷+' + g.spdBonus);
+        if (g.maxHpBonus) parts.push('生命+' + g.maxHpBonus);
+        return parts.join(' ');
+      };
+      const slotHtml = (slotName, id) => {
+        const g = id ? Data.getEquipment(id) : null;
+        return '<div class="row"><span class="k">' + slotName + '</span>' +
+          '<span class="v' + (g ? '' : ' gray') + '">' + (g ? esc(g.name) : '空') + '</span>' +
+          (g ? '<button class="save-btn shop-unequip" data-slot="' + slotName + '" style="width:auto;padding:2px 8px;">卸下</button>' : '') +
+          '</div>' +
+          (g ? '<div class="row" style="font-size:10px;color:var(--fg-dim);">' + esc(g.desc) + '</div>' : '');
+      };
+      // 当前属性总览（recalcStats 已纳入装备+羁绊）
+      const statsLine = '当前：HP ' + st.hp + '/' + st.maxHp + ' · ATK ' + st.atk + ' · DEF ' + st.def + ' · SPD ' + st.spd;
+      const listHtml = Object.keys(Data.EQUIPMENT).map(id => {
+        const g = Data.EQUIPMENT[id];
+        const owned = st.inventory.find(i => i.id === id);
+        const equipped = eq.armor === id || eq.accessory === id;
+        const price = Math.round(g.price * (1 - disc));
+        return '<div class="shop-row">' +
+          '<div class="shop-info"><span class="shop-name">' + esc(g.name) + '</span>' +
+          '<span class="shop-eff">' + esc(g.desc) + '</span></div>' +
+          '<span class="shop-price">' + (owned ? (equipped ? '已装备' : '持有×' + owned.count) : '¥' + price) + '</span>' +
+          (owned && !equipped ? '<button class="save-btn shop-equip" data-id="' + esc(id) + '" data-kind="' + g.kind + '">装备</button>' : '') +
+          '</div>';
+      }).join('');
+      m.box.innerHTML = '<div style="font-size:15px;color:var(--accent-hi);margin-bottom:6px;">装备</div>' +
+        '<div style="font-size:12px;color:var(--fg-dim);margin-bottom:8px;">' + esc(statsLine) + '</div>' +
+        slotHtml('防具', eq.armor) + slotHtml('饰品', eq.accessory) +
+        '<div style="font-size:12px;color:var(--fg-dim);margin:10px 0 4px;">── 可装备 ──</div>' +
+        listHtml;
+      m.box.appendChild(m.esc);
+      bind(m.box);
+    };
+    const bind = (root) => {
+      root.querySelectorAll('.shop-equip').forEach(b => {
+        b.addEventListener('click', () => {
+          const id = b.dataset.id;
+          const r = b.dataset.kind === 'armor' ? Engine.equipArmor(id) : Engine.equipAccessory(id);
+          if (r.ok) { showToast('已装备'); render(); }
+          else showToast('装备失败：' + (r.msg || ''), 'warn');
+        });
+      });
+      root.querySelectorAll('.shop-unequip').forEach(b => {
+        b.addEventListener('click', () => {
+          Engine.unequip(b.dataset.slot === '防具' ? 'armor' : 'accessory');
+          showToast('已卸下');
+          render();
+        });
+      });
+    };
+    render();
+  }
+
   function continueMainline() {
     if (typeof Game === 'undefined' || !Game.getChapter) { showDialog('主线功能待接入'); return; }
-    // 当前章节主线起点场景
+    const ch = Game.getChapter();
+    // 通过 Game.advanceMainline 走天数门槛：未解锁返回 {unlocked:false}，不跑剧情
+    if (typeof Game.advanceMainline === 'function') {
+      if (typeof Game.setPhase !== 'undefined' && Game.PHASES) {
+        Game.setPhase(Game.PHASES.DIALOGUE);
+      }
+      const st = Game.advanceMainline(ch, 1);
+      // 未解锁时 Game.advanceMainline 已通过 view.log 弹出对话框提示，这里无需重复 toast
+      return;
+    }
+    // 旧路径兜底
     const MAINLINE_START = { 1: 'chapter1_1', 2: 'chapter2_1', 3: 'chapter3_1' };
-    const start = MAINLINE_START[Game.getChapter()];
+    const start = MAINLINE_START[ch];
     if (!start) { showDialog('主线功能待接入'); return; }
-    // 直接调 runScene（不经过 runDialogue 的 .then，避免长主线链时过早回到地图）
     if (typeof Game !== 'undefined' && Game.setPhase && Game.PHASES) {
       Game.setPhase(Game.PHASES.DIALOGUE);
     }

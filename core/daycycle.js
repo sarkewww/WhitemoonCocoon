@@ -19,6 +19,7 @@ const DayCycle = (() => {
     fight: 1,     // 巡逻/战斗
     craft: 0,     // 合成
     rest: 0,      // 休息（推进到夜晚/次日）
+    travel: 1,    // 区域交通（车站传送）
   };
 
   // 从存档状态读取/初始化日程字段
@@ -27,6 +28,7 @@ const DayCycle = (() => {
     if (!S.phase) S.phase = 'day';
     if (typeof S.ap !== 'number') S.ap = S.phase === 'day' ? DAY_AP : NIGHT_AP;
     if (!S.dayCounters) S.dayCounters = {};
+    if (!S.eventCounts || typeof S.eventCounts !== 'object' || Array.isArray(S.eventCounts)) S.eventCounts = {};
     return S;
   }
 
@@ -78,10 +80,38 @@ const DayCycle = (() => {
     return chapterDays(S, chapter) >= requireDays;
   }
 
+  // ---- 每日事件限量（once:false 重复战斗/事件防刷）----
+  // 记录键为"日历日"（S.day），跨日自动重置。
+  // S.eventCounts[id] = { day, count }：该事件在今天已触发的次数。
+  // 由 Game 层在触发 once:false 事件前调用 canTriggerEvent 判断、触发成功后 recordEvent 记账。
+
+  // 今日已触发次数
+  function eventCount(S, id) {
+    ensure(S);
+    const rec = S.eventCounts[id];
+    return rec && rec.day === S.day ? rec.count : 0;
+  }
+
+  // 今日是否还可触发（未超过 limit）；返回 { ok, count, limit, remaining }
+  function canTriggerEvent(S, id, limit) {
+    const count = eventCount(S, id);
+    return { ok: count < limit, count, limit, remaining: Math.max(0, limit - count) };
+  }
+
+  // 记录一次触发（跨日自动新建当日记录）；返回累计次数
+  function recordEvent(S, id) {
+    ensure(S);
+    const rec = S.eventCounts[id];
+    if (!rec || rec.day !== S.day) S.eventCounts[id] = { day: S.day, count: 1 };
+    else rec.count += 1;
+    return S.eventCounts[id].count;
+  }
+
   return {
     DAY_AP, NIGHT_AP, COST,
     ensure, getDay, getPhase, getAP, maxAP,
     spend, advance, rest, chapterDays, mainReady,
+    eventCount, canTriggerEvent, recordEvent,
   };
 })();
 

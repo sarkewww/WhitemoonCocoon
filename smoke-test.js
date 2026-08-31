@@ -296,6 +296,158 @@ t('core.Events registerCommon + CALL 执行', () => {
   });
 });
 
+// ============================================================================
+// 追加块：养成/经济系统（Confidant 等级、货币、商店、装备栏）
+// ============================================================================
+
+t('trustRank 等级阈值', () => {
+  if (Engine.trustRank(0) !== 1) throw new Error('trustRank(0) 应为 R1');
+  if (Engine.trustRank(29) !== 1) throw new Error('trustRank(29) 应为 R1');
+  if (Engine.trustRank(30) !== 2) throw new Error('trustRank(30) 应为 R2');
+  if (Engine.trustRank(59) !== 2) throw new Error('trustRank(59) 应为 R2');
+  if (Engine.trustRank(60) !== 3) throw new Error('trustRank(60) 应为 R3');
+  if (Engine.trustRank(80) !== 4) throw new Error('trustRank(80) 应为 R4');
+  if (Engine.trustRank(100) !== 4) throw new Error('trustRank(100) 应为 R4');
+});
+
+t('confidantBonus 随 trust 变化', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  let b = Engine.confidantBonus(s);
+  if (b.ranks.suzu !== 1 || b.total.critChance !== 0) throw new Error('初始 suzu 应无加成');
+  Engine.addTrust('suzu', 30);
+  b = Engine.confidantBonus(s);
+  if (b.ranks.suzu !== 2) throw new Error('suzu R2 期望');
+  if (b.total.critChance !== 0.05) throw new Error('suzu R2 暴击应为 0.05');
+  if (b.total.atk !== 2) throw new Error('suzu R2 atk 应为 2');
+  Engine.addTrust('yuki', 30);
+  b = Engine.confidantBonus(s);
+  if (b.ranks.yuki !== 2) throw new Error('yuki R2 期望');
+  if (b.total.dmgReduction !== 0.05) throw new Error('yuki R2 减伤应为 0.05');
+  Engine.addTrust('hagoromo', 30);
+  b = Engine.confidantBonus(s);
+  if (b.ranks.hagoromo !== 2) throw new Error('hagoromo R2 期望');
+  if (b.total.craftDiscount !== 0.10) throw new Error('hagoromo R2 配方折扣应为 0.10');
+  // trust 值本身不被改动（addTrust 之后才 +30）
+  Engine.setState(s);
+  Engine.addTrust('suzu', 100);
+  if (Engine.getTrust('suzu') !== 100) throw new Error('trust 应封顶 100');
+});
+
+t('recalcStats 纳入羁绊数值加成', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  const atk0 = s.atk;
+  Engine.addTrust('suzu', 30);   // R2: atk+2
+  Engine.recalcStats();
+  if (s.atk !== atk0 + 2) throw new Error('suzu R2 后 atk 应 +2，实际 '+(s.atk-atk0));
+  if (s.critChance !== 0.05) throw new Error('s.critChance 应为 0.05');
+});
+
+t('money 增减 / 不足被拒', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  if (s.money !== 500) throw new Error('初始 money 应为 500');
+  Engine.addMoney(100);
+  if (s.money !== 600) throw new Error('addMoney 后应为 600');
+  if (!Engine.spendMoney(200)) throw new Error('spendMoney 200 应成功');
+  if (s.money !== 400) throw new Error('spend 后应为 400');
+  if (Engine.spendMoney(9999)) throw new Error('余额不足应被拒');
+  if (s.money !== 400) throw new Error('被拒后金额不应变化');
+});
+
+t('buyItem 成功扣钱并入库', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  const price = Data.getItem('potion').price;
+  const r = Engine.buyItem('potion', 2);
+  if (!r.ok) throw new Error('buyItem 应成功: '+(r.msg||''));
+  if (s.money !== 500 - price*2) throw new Error('money 应减少 '+price*2);
+  if (!Engine.hasItem('potion', 2)) throw new Error('potion 应入库 2 个');
+});
+
+t('buyItem 余额不足被拒', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  s.money = 10;
+  const r = Engine.buyItem('mega_potion', 1);  // 250 > 10
+  if (r.ok) throw new Error('余额不足应被拒');
+  if (s.money !== 10) throw new Error('被拒后 money 不应变');
+  if (Engine.hasItem('mega_potion', 1)) throw new Error('被拒后不应入库');
+});
+
+t('buyItem 未知物品被拒', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  if (Engine.buyItem('nonexistent').ok) throw new Error('未知物品应被拒');
+});
+
+t('sellItem 半价回笼金币', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  Engine.addItem('potion', 1);
+  const price = Data.getItem('potion').price;
+  const sell = Math.max(1, Math.floor(price * 0.5));
+  const r = Engine.sellItem('potion', 1);
+  if (!r.ok) throw new Error('sellItem 应成功');
+  if (s.money !== 500 + sell) throw new Error('卖出应 +'+sell+'，实际 money='+s.money);
+  if (Engine.hasItem('potion', 1)) throw new Error('卖出后应无 potion');
+});
+
+t('equipArmor 后 recalcStats 含防御加成', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  Engine.addItem('robe_white', 1);
+  const def0 = s.def;
+  const r = Engine.equipArmor('robe_white');
+  if (!r.ok) throw new Error('equipArmor 应成功: '+(r.msg||''));
+  if (s.armorId !== 'robe_white') throw new Error('armorId 未写入');
+  Engine.recalcStats();
+  if (s.def !== def0 + 3) throw new Error('def 应 +3，实际 '+(s.def-def0));
+});
+
+t('equipAccessory 后 recalcStats 含攻击加成', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  Engine.addItem('moon_ring', 1);
+  const atk0 = s.atk;
+  const r = Engine.equipAccessory('moon_ring');
+  if (!r.ok) throw new Error('equipAccessory 应成功: '+(r.msg||''));
+  if (s.accessoryId !== 'moon_ring') throw new Error('accessoryId 未写入');
+  Engine.recalcStats();
+  if (s.atk !== atk0 + 3) throw new Error('atk 应 +3，实际 '+(s.atk-atk0));
+});
+
+t('unequip 还原加成', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  Engine.addItem('robe_white', 1);
+  const def0 = s.def;
+  Engine.equipArmor('robe_white');
+  if (s.def === def0) throw new Error('装备后 def 应变化');
+  const u = Engine.unequip('armor');
+  if (!u.ok) throw new Error('unequip 应成功');
+  if (s.armorId !== null) throw new Error('unequip 后 armorId 应为 null');
+  Engine.recalcStats();
+  if (s.def !== def0) throw new Error('unequip 后 def 应还原');
+});
+
+t('装备需先拥有 / 类型校验', () => {
+  const s = Engine.newGame();
+  Engine.setState(s);
+  if (Engine.equipArmor('robe_white').ok) throw new Error('未拥有装备不应可穿');
+  Engine.addItem('moon_ring', 1);
+  if (Engine.equipArmor('moon_ring').ok) throw new Error('饰品不应可穿入防具槽');
+  if (Engine.equipAccessory('nonexistent').ok) throw new Error('未知装备应被拒');
+});
+
+t('Data 价格/装备查询', () => {
+  if (Data.getItem('potion').price <= 0) throw new Error('potion 应有价格');
+  if (Data.getEquipment('robe_white').defBonus !== 3) throw new Error('robe_white defBonus 应为 3');
+  if (Data.getAllEquipment().robe_white.kind !== 'armor') throw new Error('robe_white 应为 armor');
+  if (Data.getSellPrice('potion') !== Math.max(1, Math.floor(Data.getPrice('potion')*0.5))) throw new Error('sellPrice 应为买入价一半');
+});
+
 // ---- 汇总输出（等待 async 测试完成，确保 ALL TESTS PASSED 输出）----
 Promise.all(asyncTests).then(() => {
   results.forEach(r => console.log(r.join(' | ')));

@@ -32,6 +32,11 @@ const Game = (() => {
   let currentLoc = null;
   let dialogueStack = [];   // 对话链（用于返回地图）
 
+  // 每日可重复触发事件上限（once:false 的重复战斗/事件防刷）
+  const DAILY_EVENT_LIMIT = 2;
+  // 各章节主线起点场景
+  const MAINLINE_START = { 1: 'chapter1_1', 2: 'chapter2_1', 3: 'chapter3_1' };
+
   function register(v) { Object.assign(view, v); }
 
   // ---- 章节/地图 ----
@@ -41,6 +46,37 @@ const Game = (() => {
   function setPhase(p) { phase = p; }
   function getCurrentLoc() { return currentLoc; }
   function getLoc(id) { return typeof World !== 'undefined' && World.getLocation(chapter, id); }
+
+  // ---- AP 消耗与重复事件限量（统一 helper）----
+  // 按事件类型扣 AP：战斗 fight，对话/支线/命令序列 chat。失败返回 false。
+  function chargeForEvent(S, ev) {
+    if (typeof DayCycle === 'undefined' || !DayCycle.spend) return true;
+    const action = ev && ev.enemy ? 'fight' : 'chat';
+    if (!DayCycle.spend(S, action)) {
+      view.log && view.log('行动点不足，无法触发。');
+      return false;
+    }
+    return true;
+  }
+
+  // once:false 的重复事件每日限量（once:true 一次性事件不限制）。
+  function eventLimitOK(S, ev) {
+    if (!ev || ev.once) return { ok: true };
+    const id = ev.id || ev.scene || ev.enemy;
+    if (!id) return { ok: true };
+    const st = (typeof DayCycle !== 'undefined' && DayCycle.canTriggerEvent)
+      ? DayCycle.canTriggerEvent(S, id, DAILY_EVENT_LIMIT)
+      : { ok: true, count: 0, limit: DAILY_EVENT_LIMIT, remaining: DAILY_EVENT_LIMIT };
+    if (!st.ok) view.log && view.log('这里的状况今天已经熟悉了（今日已遭遇 ' + st.count + '/' + st.limit + ' 次）。');
+    return st;
+  }
+
+  // once:false 事件触发成功后记账（按事件 id，跨日自动重置）。
+  function recordEventCount(S, ev) {
+    if (!ev || ev.once) return;
+    const id = ev.id || ev.scene || ev.enemy;
+    if (id && typeof DayCycle !== 'undefined' && DayCycle.recordEvent) DayCycle.recordEvent(S, id);
+  }
 
   // 从 Engine 状态同步内部 chapter（解决 story 改 S.chapter 后 Game.chapter 不同步的问题）
   function syncFromState() {
@@ -72,13 +108,21 @@ const Game = (() => {
       const ok = reachable.some(l => l.id === locId);
       if (!ok && locId !== 'station') {
         view.log && view.log('需要先去车站');
-        return;
+        return false;
+      }
+    }
+    // 移动消耗行动点（COST.explore=1），不足则保持原地
+    if (typeof DayCycle !== 'undefined' && DayCycle.spend) {
+      if (!DayCycle.spend(S, 'explore')) {
+        view.log && view.log('行动点不足，无法移动。');
+        return false;
       }
     }
     currentLoc = locId;
     renderMap();
     // 移动后尝试触发地点事件
     tryFireEvent();
+    return true;
   }
 
   // 从车站前往其他区域（Persona 式区域交通）
@@ -86,18 +130,18 @@ const Game = (() => {
   function travelToDistrict(districtId) {
     if (currentLoc !== 'station') {
       view.log && view.log('需要先到达车站才能前往其他区域');
-      return;
+      return false;
     }
     const locs = typeof World !== 'undefined' && World.getLocationsInDistrict(chapter, districtId);
     if (!locs || !locs.length) {
       view.log && view.log('该区域还没有可到达的地点');
-      return;
+      return false;
     }
     const S = typeof Engine !== 'undefined' && Engine.getState();
     if (typeof DayCycle !== 'undefined') {
       if (!DayCycle.spend(S, 'travel')) {
         view.log && view.log('行动点不足');
-        return;
+        return false;
       }
     }
     const entry = locs[0];
@@ -105,6 +149,7 @@ const Game = (() => {
     renderMap();
     // 抵达后尝试触发入口节点事件
     tryFireEvent();
+    return true;
   }
 
   // 当前地点所属区域
@@ -157,6 +202,12 @@ const Game = (() => {
     const S = Engine.getState();
     const ev = typeof World !== 'undefined' && World.rollEvent(chapter, currentLoc, S.phase || 'day', S);
     if (!ev) return false;
+    // 每日限量：once:false 的重复事件超限则不触发
+    if (!eventLimitOK(S, ev).ok) return false;
+    // 触发事件消耗行动点（战斗 fight / 对话支线 chat）
+    if (!chargeForEvent(S, ev)) return false;
+    // once:false 事件每日限量记账（对话/命令/战斗通用）
+    recordEventCount(S, ev);
     const done = S.doneScenes || {};
     // Events 命令事件（core/events.js 解释器执行 commands 序列）
     if (ev.commands && Array.isArray(ev.commands) && typeof Events !== 'undefined' && Events.process) {
@@ -197,7 +248,7 @@ const Game = (() => {
   // evIdx 语义：若为有效数字且该索引存在则使用该事件；否则用 rollEvent 逻辑自动筛选可触发事件。
   function fireAt(locId, evIdx) {
     const loc = getLoc(locId);
-    if (!loc) return;
+    if (!loc) return false;
     currentLoc = locId;
     syncFromState();
     const S = Engine.getState();
@@ -206,20 +257,26 @@ const Game = (() => {
     // 指定索引且存在 → 使用该事件（仍需过滤 when/cond/once）
     if (typeof evIdx === 'number' && Array.isArray(loc.events) && loc.events[evIdx]) {
       ev = loc.events[evIdx];
-      if (ev.when && ev.when !== 'any' && ev.when !== phaseName) return;
-      if (ev.cond && !evalCond(ev.cond, S)) { view.log && view.log('现在还不能这样做。'); return; }
+      if (ev.when && ev.when !== 'any' && ev.when !== phaseName) return false;
+      if (ev.cond && !evalCond(ev.cond, S)) { view.log && view.log('现在还不能这样做。'); return false; }
       const done = S.doneScenes || {};
-      if (ev.once && (ev.scene || ev.enemy) && done[ev.scene || ev.enemy]) return;
+      if (ev.once && (ev.scene || ev.enemy) && done[ev.scene || ev.enemy]) return false;
     } else {
       // 未指定或索引无效 → 自动筛选
       ev = typeof World !== 'undefined' && World.rollEvent(chapter, locId, phaseName, S);
-      if (!ev) return;
+      if (!ev) return false;
     }
+    // 每日限量：once:false 的重复事件超限则不触发
+    if (!eventLimitOK(S, ev).ok) return false;
+    // 触发事件消耗行动点（战斗 fight / 对话支线 chat）
+    if (!chargeForEvent(S, ev)) return false;
+    // once:false 事件每日限量记账（对话/命令/战斗通用）
+    recordEventCount(S, ev);
     const done = S.doneScenes || {};
     // Events 命令事件（core/events.js 解释器执行 commands 序列）
     if (ev.commands && Array.isArray(ev.commands) && typeof Events !== 'undefined' && Events.process) {
       runCommands(ev);
-      return;
+      return true;
     }
     // 纯剧情事件立即标记 once；战斗事件延迟到胜利后再标记
     if (ev.once && !ev.enemy) done[ev.scene] = true;
@@ -240,9 +297,12 @@ const Game = (() => {
         }
         renderMap();
       });
+      return true;
     } else if (ev.scene) {
       runDialogue(ev.scene);
+      return true;
     }
+    return false;
   }
 
   // ---- 对话链 ----
@@ -273,6 +333,36 @@ const Game = (() => {
   }
 
   // ---- 日程 ----
+  // 主线是否解锁：基于章内已过天数（dayCounters[chapter] >= requireDays）。
+  // 返回 { unlocked, chapter, requireDays, currentDays, need }；need 为还需经过的天数。
+  function isMainlineUnlocked(chapter, requireDays) {
+    syncFromState();
+    const S = Engine.getState();
+    const ch = typeof chapter === 'number' ? chapter : S.chapter;
+    const req = (typeof requireDays === 'number' && requireDays >= 0) ? requireDays : 1;
+    const current = (typeof DayCycle !== 'undefined' && DayCycle.chapterDays)
+      ? DayCycle.chapterDays(S, ch)
+      : ((S.dayCounters && S.dayCounters[ch]) || 0);
+    const unlocked = current >= req;
+    return { unlocked, chapter: ch, requireDays: req, currentDays: current, need: Math.max(0, req - current) };
+  }
+
+  // 主线推进入口：未到天数门槛时返回未解锁状态（不硬崩溃），已解锁则进入该章主线起点场景。
+  function advanceMainline(chapter, requireDays) {
+    const st = isMainlineUnlocked(chapter, requireDays);
+    if (!st.unlocked) {
+      view.log && view.log('主线尚未解锁：本日行程还需 ' + st.need + ' 天才可推进。');
+      return st;
+    }
+    const start = MAINLINE_START[st.chapter];
+    if (!start) {
+      view.log && view.log('该章节还没有主线剧情。');
+      return Object.assign({}, st, { scene: null });
+    }
+    runDialogue(start);
+    return Object.assign({}, st, { scene: start });
+  }
+
   function passTime() {
     syncFromState();
     const S = Engine.getState();
@@ -321,6 +411,7 @@ const Game = (() => {
     explore, moveTo, travelToDistrict, getCurrentDistrict,
     tryFireEvent, fireAt, runDialogue, endDialogue, goto,
     passTime, renderMap, returnToMap, getCurrentLoc, getLoc, syncFromState,
+    isMainlineUnlocked, advanceMainline,
   };
 })();
 
