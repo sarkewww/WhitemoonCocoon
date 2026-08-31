@@ -82,6 +82,24 @@ const Events = (() => {
     }
   }
 
+  // ===== 条件字段名配置（默认白月世界观：affinity→trust, meter1→ero, meter2→anchor）=====
+  let config = {
+    affinityField: 'trust',   // 亲和度/好感度表字段名（S[affinityField] 为 {key:value}）
+    meter1Field: 'ero',       // 第一仪表/侵蚀度字段名（数值，默认 0）
+    meter2Field: 'anchor',    // 第二仪表/锚点字段名（数值，默认 50）
+  };
+
+  // 外部配置覆盖：Events.configure({ affinityField, meter1Field, meter2Field })
+  // 调用后 checkCondition 读取新字段名。返回当前配置快照。
+  function configure(opts = {}) {
+    if (opts && typeof opts === 'object') {
+      if (typeof opts.affinityField === 'string' && opts.affinityField) config.affinityField = opts.affinityField;
+      if (typeof opts.meter1Field === 'string' && opts.meter1Field) config.meter1Field = opts.meter1Field;
+      if (typeof opts.meter2Field === 'string' && opts.meter2Field) config.meter2Field = opts.meter2Field;
+    }
+    return Object.assign({}, config);
+  }
+
   // ===== 条件检查 =====
   function checkCondition(cond, S) {
     if (!cond) return true;
@@ -89,12 +107,19 @@ const Events = (() => {
     if (cond.flag !== undefined) return !!S.flags[cond.flag];
     if (cond.noFlag !== undefined) return !S.flags[cond.noFlag];
     if (cond.var !== undefined) return (S.vars[cond.var]||0) >= (cond.value || 1);
-    if (cond.trust !== undefined) {
-      const t = S.trust ? S.trust[cond.trust] || 0 : 0;
-      return t >= (cond.value || 1);
+    // 亲和度（好感度）：cond.affinity（通用名）/ cond.trust（旧名兼容）
+    const affinityKey = cond.affinity !== undefined ? cond.affinity : cond.trust;
+    if (affinityKey !== undefined) {
+      const table = S[config.affinityField];
+      const v = table ? table[affinityKey] || 0 : 0;
+      return v >= (cond.value || 1);
     }
-    if (cond.ero !== undefined) return (S.ero||0) >= cond.ero;
-    if (cond.anchor !== undefined) return (S.anchor||50) >= cond.anchor;
+    // 第一仪表（侵蚀）：cond.meter1（通用名）/ cond.ero（旧名兼容）
+    const meter1 = cond.meter1 !== undefined ? cond.meter1 : cond.ero;
+    if (meter1 !== undefined) return (S[config.meter1Field] || 0) >= meter1;
+    // 第二仪表（锚点）：cond.meter2（通用名）/ cond.anchor（旧名兼容）
+    const meter2 = cond.meter2 !== undefined ? cond.meter2 : cond.anchor;
+    if (meter2 !== undefined) return (S[config.meter2Field] || 50) >= meter2;
     if (cond.item !== undefined) {
       const inv = S.inventory || [];
       return inv.some(i => i.id === cond.item);
@@ -114,7 +139,7 @@ const Events = (() => {
 
   return {
     TRIGGERS, CMD,
-    registerCommon, process, checkCondition, worldEventToCommands,
+    registerCommon, configure, process, checkCondition, worldEventToCommands,
   };
 })();
 if (typeof window !== 'undefined') window.Events = Events;

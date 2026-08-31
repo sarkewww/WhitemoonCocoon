@@ -44,6 +44,10 @@ global.App = {
   dieAndRetry(){},
 };
 
+// ---- 载入 core/data（Data 为物品/材料/配方/技能唯一数据源，battle 读取之）----
+const dataCode = fs.readFileSync(path.join(__dirname,'core','data.js'),'utf8');
+global.Data = new Function(dataCode+'\n return Data;')();
+
 // ---- 载入 battle ----
 const battleCode = fs.readFileSync(path.join(__dirname,'battle.js'),'utf8');
 global.Battle = new Function('window','document', battleCode+'\nreturn Battle;')(global, { getElementById: mk });
@@ -305,6 +309,88 @@ async function run(){
       Math.random = origRandom;
       App.promptAction = origPrompt;
       App.battleLog = origLog;
+    }
+  });
+
+  // ==================== Data.SKILLS 参数化一致性（battle 从 Data 读取） ====================
+
+  // 测试: Data.SKILLS 各技能参数与 battle 实际使用完全一致
+  t('Data.SKILLS 参数与 battle 实际使用一致', () => {
+    const exp = {
+      strike:   { name:'苍月斩', cost:0, mult:1.0 },
+      pure:     { name:'净化之矢', cost:20, mult:1.7 },
+      guard:    { name:'防御', cost:0 },
+      erosion:  { name:'蚀心之触', cost:25, mult:2.4, eroCost:8 },
+      heal:     { name:'魂愈', cost:15, heal:0.28 },
+      ultimate: { name:'白月破晓', cost:0, mult:3.8 },
+    };
+    for (const [id, want] of Object.entries(exp)) {
+      const sk = Data.getSkill(id);
+      if (!sk) throw new Error(id+' 技能缺失');
+      for (const k of Object.keys(want)) {
+        if (sk[k] !== want[k]) throw new Error(`${id}.${k} 应为 ${want[k]}，实际 ${sk[k]}`);
+      }
+    }
+  });
+
+  // 测试: battle 技能名/SP消耗/倍率 从 Data.SKILLS 读取（与 getActionKey 一致）
+  t('battle 技能参数读取自 Data.SKILLS', () => {
+    for (const id of ['strike','pure','guard','erosion','heal','ultimate']) {
+      const sk = Data.getSkill(id);
+      if (Battle.getActionKey(id) !== sk.name) throw new Error(`${id} 显示名应为 ${sk.name}`);
+      if (Battle.RECIPES === undefined) throw new Error('RECIPES 导出缺失');
+    }
+  });
+
+  // 测试: 道具/材料/配方数据源为 Data（battle 与 Data 同一引用）
+  t('道具/材料/配方 与 Data 同源', () => {
+    if (Battle.ITEMS !== Data.getAllItems()) throw new Error('ITEMS 应与 Data.getAllItems() 同一引用');
+    if (Battle.MATERIALS !== Data.getAllMaterials()) throw new Error('MATERIALS 应与 Data.getAllMaterials() 同一引用');
+    if (Battle.RECIPES !== Data.getAllRecipes()) throw new Error('RECIPES 应与 Data.getAllRecipes() 同一引用');
+  });
+
+  // 测试: 配方/物品效果从 Data 读取后数值不变（回归）
+  t('配方/物品效果 与 Data 一致', () => {
+    const r = Data.getRecipe('r_potion');
+    if (!r || r.out.id !== 'potion' || r.cost.tentacle_frag !== 2 || r.cost.moon_petal !== 1) throw new Error('r_potion 配方不符');
+    const pot = Data.getItem('potion');
+    if (pot.kind !== 'heal' || pot.heal !== 0.35) throw new Error('potion 效果不符');
+    const mega = Data.getItem('mega_potion');
+    if (mega.heal !== 0.70) throw new Error('mega_potion 效果不符');
+    const tear = Data.getItem('tear');
+    if (tear.heal !== 0.30 || tear.ero !== -8) throw new Error('tear 效果不符');
+    const sed = Data.getItem('sedative');
+    if (sed.ero !== -12) throw new Error('sedative 效果不符');
+    const ether = Data.getItem('ether');
+    if (ether.sp !== 0.40) throw new Error('ether 效果不符');
+  });
+
+  // 测试: 战斗中使用道具 heal 量取自 Data（HP 恢复量一致）
+  await t('战斗中道具 heal 量取自 Data', async () => {
+    const s = Engine.newGame();
+    Engine.setState(s);
+    Engine.addItem('potion', 1);
+    s.hp = Math.round(s.maxHp * 0.5);
+    const beforeHp = s.hp;
+    const pot = Data.getItem('potion');
+    const expectedHeal = Math.round(s.maxHp * pot.heal);
+    const origPrompt = App.promptAction;
+    const origPromptItem = App.promptItem;
+    let asked = 0;
+    App.promptAction = async () => { asked++; return asked === 1 ? 'item' : 'strike'; };
+    App.promptItem = async () => 'potion';
+    let won = false;
+    try {
+      await Battle.start({
+        enemy: { id:'it', name:'测试魔物', hp:30, atk:0, def:0, spd:0, xp:1, sprite:['x'] },
+        onWin: async () => { won = true; },
+        onLose: async () => {},
+      });
+      if (!won) throw new Error('未胜利');
+      if (s.hp !== Math.min(s.maxHp, beforeHp + expectedHeal)) throw new Error(`道具恢复量不符，期望 +${expectedHeal}，实际 ${s.hp - beforeHp}`);
+    } finally {
+      App.promptAction = origPrompt;
+      App.promptItem = origPromptItem;
     }
   });
   const failed = results.filter(r=>r[0]==='FAIL');

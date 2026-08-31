@@ -1,5 +1,9 @@
 /* =========================================================
- * 白月茧响 - 核心引擎
+ * 白月茧响 - 核心引擎（可配置核心层）
+ * 通用层：存档 / 道具 / 合成 / 装备 / 货币 / 属性 / 等级
+ * 主题层：trust(羁绊) / ero(侵蚀) / anchor(锚点) 由 CONFIG 注入
+ * 默认 CONFIG 完全复刻白月默认行为；Engine.configure() 可覆盖。
+ * 对外 API 保持兼容（main.js / battle.js / core/* 依赖的方法名与签名不变）。
  * ========================================================= */
 'use strict';
 
@@ -8,28 +12,135 @@ const Engine = (() => {
   const SAVE_KEY = 'wmc_save_v1';
   const AUTO_KEY = 'wmc_auto_v1';
 
+  // ---- 可配置默认值（白月默认基线）----
+  const DEFAULT_CONFIG = {
+    // 默认玩家字段（白月专属默认值，可由配置覆盖）
+    initialState: {
+      scene: 'prologue_0',
+      sceneIdx: 0,
+      chapter: 0,
+      hp: 100, maxHp: 100,
+      sp: 50, maxSp: 50,
+      atk: 12, def: 6, spd: 10,
+      xp: 0, level: 1,
+      name: '绫音',
+      trueName: '凌',
+      weapon: 1,
+      skills: ['strike'],
+      money: 500,
+      weaponLevel: 1,
+      statPts: 0,
+      stats: { str:1, vit:1, spi:1, agi:1 },
+      armorId: null,
+      accessoryId: null,
+    },
+    // 羁绊系统（affinity）：角色列表 + 是否启用 + 上限 + 初始值 + 等级阈值 + 被动加成表
+    affinities: {
+      enabled: true,
+      list: ['yuki', 'suzu', 'hagoromo'],
+      max: 100,
+      initial: { yuki: 0, suzu: 0, hagoromo: 0 },
+      thresholds: [
+        { rank: 1, min: 0 },
+        { rank: 2, min: 30 },
+        { rank: 3, min: 60 },
+        { rank: 4, min: 80 },
+      ],
+      bonuses: {
+        yuki: {           // 雪：守护 / 减伤
+          1: {},
+          2: { def: 2, dmgReduction: 0.05 },
+          3: { def: 4, dmgReduction: 0.08, maxHp: 10 },
+          4: { def: 6, dmgReduction: 0.12, maxHp: 20 },
+        },
+        suzu: {           // 铃：锋锐 / 暴击
+          1: {},
+          2: { atk: 2, critChance: 0.05 },
+          3: { atk: 4, critChance: 0.08 },
+          4: { atk: 6, critChance: 0.12 },
+        },
+        hagoromo: {       // 羽衣：巧匠 / 折扣
+          1: {},
+          2: { craftDiscount: 0.10, shopDiscount: 0.05 },
+          3: { craftDiscount: 0.20, shopDiscount: 0.10 },
+          4: { craftDiscount: 0.30, shopDiscount: 0.15 },
+        },
+      },
+    },
+    // 计量条系统（meter）：是否启用 + 显示名 + 上限 + 初始值
+    meters: {
+      ero:    { enabled: true, name: '侵蚀', max: 100, initial: 0 },
+      anchor: { enabled: true, name: '锚点', max: 100, initial: 50 },
+    },
+  };
+
+  let cfg = deepClone(DEFAULT_CONFIG);
+
+  // ---- 配置工具 ----
+  function deepClone(v) {
+    if (Array.isArray(v)) return v.map(deepClone);
+    if (v && typeof v === 'object') {
+      const o = {};
+      for (const k of Object.keys(v)) o[k] = deepClone(v[k]);
+      return o;
+    }
+    return v;
+  }
+  function deepMerge(target, src) {
+    for (const k of Object.keys(src)) {
+      const sv = src[k];
+      if (sv && typeof sv === 'object' && !Array.isArray(sv) &&
+          target[k] && typeof target[k] === 'object' && !Array.isArray(target[k])) {
+        deepMerge(target[k], sv);
+      } else {
+        target[k] = sv;
+      }
+    }
+    return target;
+  }
+  // 由外部覆盖配置（合并式覆盖）。返回当前配置。
+  function configure(overrides) {
+    if (overrides && typeof overrides === 'object') deepMerge(cfg, overrides);
+    return cfg;
+  }
+  function getConfig() { return cfg; }
+  function resetConfig() { cfg = deepClone(DEFAULT_CONFIG); return cfg; }
+
+  // ---- 主题（affinity / meter）辅助 ----
+  function affinityList() { return (cfg.affinities && cfg.affinities.list) || []; }
+  function affinityInitial() {
+    const init = {};
+    const ini = (cfg.affinities && cfg.affinities.initial) || {};
+    for (const c of affinityList()) init[c] = ini[c] || 0;
+    return init;
+  }
+  function meterCfg(name) { return (cfg.meters && cfg.meters[name]) || null; }
+  function meterEnabled(name) { const m = meterCfg(name); return !!(m && m.enabled); }
+  function meterMax(name) { const m = meterCfg(name); return m ? m.max : 100; }
+  function meterInitial(name) { const m = meterCfg(name); return m ? m.initial : 0; }
+
   let state = null;
   let G = null; // 全局数据（来自 story.js / battle.js）
 
   // ---- 状态初始化 ----
   // 难度：easy / normal / hard
   function newGame(difficulty = 'normal') {
+    const ini = cfg.initialState || {};
     const s = {
-      scene: 'prologue_0',
+      scene: ini.scene || 'prologue_0',
       sceneIdx: 0,          // 场景内推进位置
       chapter: 0,
       difficulty: difficulty,
       flags: {},
       vars: {},
-      hp: 100, maxHp: 100,
-      sp: 50, maxSp: 50,
-      ero: 0,               // 侵蚀度 0-100（茧的成长）
-      atk: 12, def: 6, spd: 10,
-      xp: 0,
-      level: 1,
-      name: '绫音',
-      trueName: '凌',
-      weapon: 1,
+      hp: ini.hp ?? 100, maxHp: ini.maxHp ?? 100,
+      sp: ini.sp ?? 50, maxSp: ini.maxSp ?? 50,
+      atk: ini.atk ?? 12, def: ini.def ?? 6, spd: ini.spd ?? 10,
+      xp: ini.xp ?? 0,
+      level: ini.level ?? 1,
+      name: ini.name ?? '绫音',
+      trueName: ini.trueName ?? '凌',
+      weapon: ini.weapon ?? 1,
       combos: 0,
       kills: 0,
       damageDealt: 0,
@@ -37,23 +148,25 @@ const Engine = (() => {
       playTime: 0,
       deaths: 0,
       decisions: {},
-      trust: { yuki: 0, suzu: 0, hagoromo: 0 },  // 好感度：雪/铃/羽衣 0-100
-      anchor: 50,  // 自我锚点 0-100：凌的意志残留。结局 gate 条件之一
+      trust: affinityInitial(),  // 好感度：由配置的角色列表生成 0-100
       endings: [],
-      skills: ['strike'],
+      skills: (Array.isArray(ini.skills) ? ini.skills.slice() : ['strike']),
       unlocked: {},
       inventory: [],       // 可用道具 [{id,count}]
       materials: {},       // 合成材料 {matId:count}
       recipes: {},         // 已解锁合成配方 {recipeId:true}
-      weaponLevel: 1,      // 武器强化等级
-      money: 500,          // 货币（金币）
-      armorId: null,       // 防具槽（装备 id）
-      accessoryId: null,   // 饰品槽（装备 id）
-      statPts: 0,          // 属性点（未分配）
-      stats: { str:1, vit:1, spi:1, agi:1 },  // 力量/体力/灵力/敏捷
+      weaponLevel: ini.weaponLevel ?? 1,      // 武器强化等级
+      money: ini.money ?? 500,          // 货币（金币）
+      armorId: ini.armorId ?? null,       // 防具槽（装备 id）
+      accessoryId: ini.accessoryId ?? null,   // 饰品槽（装备 id）
+      statPts: ini.statPts ?? 0,          // 属性点（未分配）
+      stats: Object.assign({ str:1, vit:1, spi:1, agi:1 }, ini.stats || {}),  // 力量/体力/灵力/敏捷
       doneScenes: {},      // 已执行过 onEnter 的场景
       log: [],
     };
+    // 计量条（ero/anchor）：启用才写入字段
+    if (meterEnabled('ero')) s.ero = meterInitial('ero');
+    if (meterEnabled('anchor')) s.anchor = meterInitial('anchor');
     // 初始属性计算（此时 state 未挂载，直接算一次；难度倍率在 recalcStats 统一处理）
     const baseStats = {
       maxHp: 100 + (s.stats.vit)*12,
@@ -120,12 +233,14 @@ const Engine = (() => {
     if (typeof out.armorId !== 'string' && out.armorId !== null) out.armorId = null;
     if (typeof out.accessoryId !== 'string' && out.accessoryId !== null) out.accessoryId = null;
     if (!out.doneScenes || typeof out.doneScenes !== 'object' || Array.isArray(out.doneScenes)) out.doneScenes = {};
-    if (!out.trust || typeof out.trust !== 'object') out.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
-    else { out.trust.yuki = out.trust.yuki||0; out.trust.suzu = out.trust.suzu||0; out.trust.hagoromo = out.trust.hagoromo||0; }
-    if (typeof out.anchor !== 'number' || isNaN(out.anchor)) out.anchor = 50;
-    else out.anchor = Math.max(0, Math.min(100, out.anchor));
-    if (typeof out.ero !== 'number' || isNaN(out.ero)) out.ero = 0;
-    else out.ero = Math.max(0, Math.min(100, out.ero));
+    // 羁绊：按配置的角色列表补齐默认值
+    if (!out.trust || typeof out.trust !== 'object') out.trust = affinityInitial();
+    else { for (const c of affinityList()) out.trust[c] = out.trust[c] || 0; }
+    // 计量条：按配置补齐默认值与上限
+    if (typeof out.anchor !== 'number' || isNaN(out.anchor)) out.anchor = meterInitial('anchor');
+    else out.anchor = Math.max(0, Math.min(meterMax('anchor'), out.anchor));
+    if (typeof out.ero !== 'number' || isNaN(out.ero)) out.ero = meterInitial('ero');
+    else out.ero = Math.max(0, Math.min(meterMax('ero'), out.ero));
     if (typeof out.level !== 'number' || isNaN(out.level) || out.level < 1) out.level = 1;
     ['hp','maxHp','sp','maxSp','atk','def','spd','xp','kills','damageDealt','damageTaken','playTime','deaths'].forEach(k => {
       if (typeof out[k] !== 'number' || isNaN(out[k])) out[k] = base[k] || 0;
@@ -179,7 +294,7 @@ const Engine = (() => {
   function setStat(k, v) {
     if (k==='hp') state.hp = clamp(v, 0, state.maxHp);
     else if (k==='sp') state.sp = clamp(v, 0, state.maxSp);
-    else if (k==='ero') state.ero = clamp(v, 0, 100);
+    else if (meterEnabled(k)) state[k] = clamp(v, 0, meterMax(k));
     else state[k] = v;
   }
 
@@ -261,52 +376,26 @@ const Engine = (() => {
   function addStatPts(n) { getState().statPts += n; }
   function addTrust(char, n) {
     const st = getState();
-    if (!st.trust) st.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
-    if (char in st.trust) st.trust[char] = clamp(st.trust[char] + n, 0, 100);
+    if (!st.trust) st.trust = affinityInitial();
+    const max = (cfg.affinities && cfg.affinities.max) || 100;
+    if (char in st.trust) st.trust[char] = clamp(st.trust[char] + n, 0, max);
     recalcStats(st);
   }
   function getTrust(char) {
     const st = getState();
-    if (!st.trust) st.trust = { yuki: 0, suzu: 0, hagoromo: 0 };
+    if (!st.trust) st.trust = affinityInitial();
     return st.trust[char] ?? 0;
   }
   function getTrustAll() { return Object.freeze({...getState().trust}); }
 
   // ---- 羁绊等级（Confidant）----
-  // 等级阈值：R1 0 / R2 30 / R3 60 / R4 80
-  const TRUST_RANK_THRESHOLDS = [
-    { rank: 1, min: 0 },
-    { rank: 2, min: 30 },
-    { rank: 3, min: 60 },
-    { rank: 4, min: 80 },
-  ];
-  // 各角色各等级解锁的被动加成（数值加成经 recalcStats 合入 S.atk/def/maxHp，比率类暴露为 S.critChance 等）
-  const CONFIDANT_BONUS_TABLE = {
-    yuki: {           // 雪：守护 / 减伤
-      1: {},
-      2: { def: 2, dmgReduction: 0.05 },
-      3: { def: 4, dmgReduction: 0.08, maxHp: 10 },
-      4: { def: 6, dmgReduction: 0.12, maxHp: 20 },
-    },
-    suzu: {           // 铃：锋锐 / 暴击
-      1: {},
-      2: { atk: 2, critChance: 0.05 },
-      3: { atk: 4, critChance: 0.08 },
-      4: { atk: 6, critChance: 0.12 },
-    },
-    hagoromo: {       // 羽衣：巧匠 / 折扣
-      1: {},
-      2: { craftDiscount: 0.10, shopDiscount: 0.05 },
-      3: { craftDiscount: 0.20, shopDiscount: 0.10 },
-      4: { craftDiscount: 0.30, shopDiscount: 0.15 },
-    },
-  };
-  const CONFIDANT_CHARS = ['yuki', 'suzu', 'hagoromo'];
-
+  // 等级阈值来自配置 affinities.thresholds（默认：R1 0 / R2 30 / R3 60 / R4 80）
   function trustRank(trustValue) {
-    const v = clamp(trustValue || 0, 0, 100);
+    const max = (cfg.affinities && cfg.affinities.max) || 100;
+    const v = clamp(trustValue || 0, 0, max);
     let r = 1;
-    for (const t of TRUST_RANK_THRESHOLDS) if (v >= t.min) r = t.rank;
+    const thr = (cfg.affinities && cfg.affinities.thresholds) || [];
+    for (const t of thr) if (v >= t.min) r = t.rank;
     return r;
   }
   function getTrustRank(char) { return trustRank(getTrust(char)); }
@@ -314,20 +403,23 @@ const Engine = (() => {
     S = S || getState();
     const per = {}; const ranks = {};
     const total = { atk:0, def:0, maxHp:0, spd:0, critChance:0, dmgReduction:0, craftDiscount:0, shopDiscount:0 };
-    for (const c of CONFIDANT_CHARS) {
+    const bonuses = (cfg.affinities && cfg.affinities.bonuses) || {};
+    for (const c of affinityList()) {
       const v = (S.trust && S.trust[c]) || 0;
       const r = trustRank(v);
       ranks[c] = r;
-      per[c] = Object.assign({ rank: r }, CONFIDANT_BONUS_TABLE[c][r]);
+      per[c] = Object.assign({ rank: r }, (bonuses[c] || {})[r] || {});
       for (const k of Object.keys(per[c])) {
         if (k !== 'rank' && typeof per[c][k] === 'number') total[k] += per[c][k];
       }
     }
-    return { ranks, yuki: per.yuki, suzu: per.suzu, hagoromo: per.hagoromo, total };
+    return Object.assign({ ranks, total }, per);
   }
   function getConfidantBonus() { return confidantBonus(getState()); }
-  function addAnchor(n) { getState().anchor = clamp((getState().anchor||50) + n, 0, 100); }
-  function getAnchor() { return getState().anchor ?? 50; }
+  function addAnchor(n) {
+    getState().anchor = clamp((getState().anchor || meterInitial('anchor')) + n, 0, meterMax('anchor'));
+  }
+  function getAnchor() { return getState().anchor ?? meterInitial('anchor'); }
   function addStat(k, n) {
     const st = getState();
     if (st.statPts < n) return false;
@@ -563,6 +655,7 @@ const Engine = (() => {
     addAnchor, getAnchor,
     getMoney, addMoney, spendMoney, buyItem, sellItem,
     equipArmor, equipAccessory, unequip, getEquipped,
+    configure, getConfig, resetConfig,
   };
 })();
 

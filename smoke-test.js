@@ -161,6 +161,9 @@ t('场景数量统计', () => {
 // ============================================================================
 
 // 载入 core 模块（IIFE，导出 window.X + module.exports）
+// 先载 world-data.js（设置 window.WorldData，供 world.js 自动注册地图）
+require(path.join(__dirname, 'core', 'world-data.js'));
+
 const World = require(path.join(__dirname, 'core', 'world.js'));
 global.World = World;
 const DayCycle = require(path.join(__dirname, 'core', 'daycycle.js'));
@@ -251,7 +254,7 @@ t('core.Data getItem/getMaterial/getRecipe', () => {
 
 t('core.Data getSkill/getEnemy', () => {
   const sk = Data.getSkill('strike');
-  if (!sk || sk.name !== '净化斩' || sk.mult !== 1.0) throw new Error('strike 查询失败');
+  if (!sk || sk.name !== '苍月斩' || sk.mult !== 1.0) throw new Error('strike 查询失败');
   const en = Data.getEnemy('spider1');
   if (!en || en.id !== 'spider1' || en.name !== '织网之魔') throw new Error('spider1 应引用 ENEMIES');
   if (en !== global.ENEMIES.spider1) throw new Error('应返回同一引用');
@@ -520,6 +523,90 @@ t('Data 价格/装备查询', () => {
   if (Data.getEquipment('robe_white').defBonus !== 3) throw new Error('robe_white defBonus 应为 3');
   if (Data.getAllEquipment().robe_white.kind !== 'armor') throw new Error('robe_white 应为 armor');
   if (Data.getSellPrice('potion') !== Math.max(1, Math.floor(Data.getPrice('potion')*0.5))) throw new Error('sellPrice 应为买入价一半');
+});
+
+// ============================================================================
+// 追加块：Engine.configure 可配置核心层（affinity/meter 抽象）
+// - 默认配置回归：trust.yuki/suzu/hagoromo、ero、anchor 行为与旧版一致
+// - 自定义配置：Engine.configure({...}) 换成别的角色/计量条后行为正常
+// ============================================================================
+
+t('默认配置回归：trust.yuki/ero/anchor 与旧版一致', () => {
+  Engine.resetConfig();
+  const s = Engine.newGame();
+  if (s.trust.yuki !== 0 || s.trust.suzu !== 0 || s.trust.hagoromo !== 0) {
+    throw new Error('默认 trust 初始化错误: '+JSON.stringify(s.trust));
+  }
+  if (s.ero !== 0) throw new Error('默认 ero 应为 0，实际 '+s.ero);
+  if (s.anchor !== 50) throw new Error('默认 anchor 应为 50，实际 '+s.anchor);
+  if (s.name !== '绫音' || s.trueName !== '凌') throw new Error('默认姓名错误');
+  Engine.setState(s);
+  Engine.addTrust('yuki', 30);
+  if (Engine.getTrust('yuki') !== 30) throw new Error('addTrust yuki 应 +30');
+  Engine.addTrust('suzu', 100);
+  if (Engine.getTrust('suzu') !== 100) throw new Error('trust 应封顶 100');
+  Engine.setStat('ero', 150);
+  if (s.ero !== 100) throw new Error('ero 应封顶 100');
+  Engine.addAnchor(200);
+  if (s.anchor !== 100) throw new Error('anchor 应封顶 100');
+  const cb = Engine.confidantBonus(s);
+  if (cb.yuki === undefined || cb.suzu === undefined || cb.hagoromo === undefined) {
+    throw new Error('默认配置应暴露 yuki/suzu/hagoromo 加成');
+  }
+  if (cb.ranks.suzu !== 4) throw new Error('suzu 100 应为 R4');
+  if (cb.total.atk !== 6) throw new Error('suzu R4 总 atk 应为 6');
+  if (cb.total.craftDiscount !== 0) throw new Error('hagoromo 0 不应有折扣');
+});
+
+t('Engine.configure 自定义角色/计量条后行为正常', () => {
+  Engine.configure({
+    initialState: { name: 'Hero', trueName: 'H' },
+    affinities: {
+      list: ['alice', 'bob'],
+      max: 100,
+      initial: { alice: 0, bob: 0 },
+      thresholds: [
+        { rank: 1, min: 0 },
+        { rank: 2, min: 30 },
+        { rank: 3, min: 60 },
+        { rank: 4, min: 80 },
+      ],
+      bonuses: {
+        alice: { 1: {}, 2: { atk: 5 }, 3: { atk: 10 }, 4: { atk: 15 } },
+        bob:   { 1: {}, 2: { def: 4 }, 3: { def: 8 }, 4: { def: 12 } },
+      },
+    },
+    meters: {
+      ero:    { enabled: true, name: '侵蚀', max: 200, initial: 10 },
+      anchor: { enabled: true, name: '锚点', max: 200, initial: 60 },
+    },
+  });
+  const s = Engine.newGame();
+  if (s.name !== 'Hero' || s.trueName !== 'H') throw new Error('自定义姓名未生效');
+  if (JSON.stringify(Object.keys(s.trust).sort()) !== '["alice","bob"]') {
+    throw new Error('自定义角色列表未生效: '+JSON.stringify(s.trust));
+  }
+  if (s.ero !== 10) throw new Error('自定义 ero 初始应为 10');
+  if (s.anchor !== 60) throw new Error('自定义 anchor 初始应为 60');
+  const atkBefore = s.atk;   // 羁绊加成前的 atk
+  Engine.setState(s);
+  Engine.addTrust('alice', 30);
+  if (Engine.getTrust('alice') !== 30) throw new Error('alice trust 应 30');
+  if (Engine.getTrust('yuki') !== 0) throw new Error('未知角色 yuki 应返回 0');
+  Engine.setStat('ero', 500);
+  if (s.ero !== 200) throw new Error('自定义 ero 上限应为 200');
+  Engine.addAnchor(500);
+  if (s.anchor !== 200) throw new Error('自定义 anchor 上限应为 200');
+  const cb = Engine.confidantBonus(s);
+  if (cb.ranks.alice !== 2) throw new Error('alice 30 应为 R2');
+  if (cb.alice.atk !== 5) throw new Error('alice R2 atk 应为 5');
+  if (cb.bob.atk !== undefined) throw new Error('bob 无 atk 加成');
+  if (cb.total.atk !== 5) throw new Error('自定义 total.atk 应为 5');
+  // 羁绊加成应并入 recalcStats（addTrust 已触发 recalcStats，比较加成前后）
+  Engine.recalcStats();
+  if (s.atk !== atkBefore + 5) throw new Error('自定义羁绊 atk 加成未并入，实际 '+(s.atk-atkBefore));
+  // 重置回默认，避免影响后续
+  Engine.resetConfig();
 });
 
 // ---- 汇总输出（等待 async 测试完成，确保 ALL TESTS PASSED 输出）----

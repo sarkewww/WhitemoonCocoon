@@ -66,11 +66,11 @@ const Data = (() => {
 
   // ===== 技能数据库 =====
   const SKILLS = {
-    strike:   { name:'净化斩', cost:0, desc:'基础攻击', kind:'physical', mult:1.0 },
-    pure:     { name:'净化之矢', cost:20, desc:'灵力射击', kind:'magic', mult:1.8 },
+    strike:   { name:'苍月斩', cost:0, desc:'基础攻击', kind:'physical', mult:1.0 },
+    pure:     { name:'净化之矢', cost:20, desc:'灵力射击', kind:'magic', mult:1.7 },
     guard:    { name:'防御', cost:0, desc:'格挡', kind:'guard' },
-    erosion:  { name:'蚀心之触', cost:25, desc:'无视防御，高伤害', kind:'erosion', mult:2.6, ignoreDef:true, eroCost:8 },
-    heal:     { name:'魂愈', cost:15, desc:'回复 HP', kind:'heal', heal:0.35 },
+    erosion:  { name:'蚀心之触', cost:25, desc:'无视防御，高伤害', kind:'erosion', mult:2.4, ignoreDef:true, eroCost:8 },
+    heal:     { name:'魂愈', cost:15, desc:'回复 HP', kind:'heal', heal:0.28 },
     ultimate: { name:'白月破晓', cost:0, desc:'必杀技', kind:'ultimate', mult:3.8, ignoreDef:true },
   };
 

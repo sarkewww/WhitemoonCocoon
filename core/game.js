@@ -34,15 +34,27 @@ const Game = (() => {
 
   // 每日可重复触发事件上限（once:false 的重复战斗/事件防刷）
   const DAILY_EVENT_LIMIT = 2;
-  // 各章节主线起点场景
-  const MAINLINE_START = { 1: 'chapter1_1', 2: 'chapter2_1', 3: 'chapter3_1' };
-  // 主线推进断点序列（每段推进一步，到达断点后回地图）。
-  // 末段无强制断点，自然推进到章末地图入口（CHAPTER_MAP_ENTRY 拦截 chapterX_1）。
-  const MAINLINE_STEPS = {
-    1: ['chapter1_4', 'chapter1_8', 'chapter1_12'],
-    2: ['chapter2_4', 'chapter2_8', 'ch2_gate_1'],
-    3: ['chapter3_5', 'chapter3_7', 'chapter3_9'],
-  };
+
+  // ---- 主线配置（从 config/game-config.js 注入，不硬编码场景 ID）----
+  // 无 window / 未注入 GameConfig 时的兜底空配置：相关函数返回"该章节没有主线剧情"而非崩溃。
+  const DEFAULT_MAINLINE_CFG = { mainlineStart: {}, mainlineSteps: {} };
+  // 运行时注入的配置（优先于 window.GameConfig，测试用）
+  let injectedMainlineCfg = null;
+
+  // 读取主线配置：注入配置 > window.GameConfig > 空配置兜底。
+  // 每次读取归一化，保证 mainlineStart / mainlineSteps 恒为对象。
+  function getMainlineConfig() {
+    const src = injectedMainlineCfg
+      || (typeof window !== 'undefined' && window.GameConfig)
+      || DEFAULT_MAINLINE_CFG;
+    return {
+      mainlineStart: (src && src.mainlineStart) || {},
+      mainlineSteps: (src && src.mainlineSteps) || {},
+    };
+  }
+  // 运行时注入/替换主线配置；传 null/空 恢复读取 window.GameConfig。
+  function setMainlineConfig(cfg) { injectedMainlineCfg = cfg || null; }
+
   // 主线推进边界标志（runScene 遇边界场景后停止自动连播，返回地图）
   let mainlineBoundary = null;
 
@@ -383,7 +395,8 @@ const Game = (() => {
   function mainlineStepRequireDays(chapter) {
     const S = Engine.getState();
     const prog = S.mainline || {};
-    const steps = MAINLINE_STEPS[chapter] || [];
+    const cfg = getMainlineConfig();
+    const steps = cfg.mainlineSteps[chapter] || [];
     const cur = prog[chapter];
     let idx = steps.indexOf(cur);
     if (idx < 0) idx = -1;
@@ -425,11 +438,12 @@ const Game = (() => {
     const ch = st.chapter;
     const S = Engine.getState();
     ensureMainline(S);
-    const steps = MAINLINE_STEPS[ch] || [];
-    const start = MAINLINE_START[ch];
+    const cfg = getMainlineConfig();
+    const steps = cfg.mainlineSteps[ch] || [];
+    const start = cfg.mainlineStart[ch];
     if (!steps.length) {
       // 无断点定义的章节：保持旧行为从起点播放
-      if (!start) { view.log && view.log('该章节还没有主线剧情。'); return Object.assign({}, st, { scene: null }); }
+      if (!start) { view.log && view.log('该章节没有主线剧情。'); return Object.assign({}, st, { scene: null }); }
       S.mainline[ch] = S.mainline[ch] || start;
       runDialogue(start);
       return Object.assign({}, st, { scene: start });
@@ -446,9 +460,9 @@ const Game = (() => {
     // 本段起点：首次从章起点；否则从上一断点的下一场景继续
     const startScene = completedIdx >= 0
       ? (nextMainlineScene(steps[completedIdx]) || steps[completedIdx])
-      : MAINLINE_START[ch];
+      : start;
     if (!startScene) {
-      view.log && view.log('该章节还没有主线剧情。');
+      view.log && view.log('该章节没有主线剧情。');
       return Object.assign({}, st, { scene: null });
     }
     // 记录进度到目标断点；末段记录断言即可（之后自然走到章末地图入口）
@@ -517,6 +531,7 @@ const Game = (() => {
     ensureMainline, getMainlineProgress, nextMainlineScene,
     setMainlineBoundary, isMainlineBoundary, clearMainlineBoundary,
     mainlineStepRequireDays, getMainlineGate,
+    setMainlineConfig, getMainlineConfig,
   };
 })();
 

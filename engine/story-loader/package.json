@@ -1,0 +1,22 @@
+{
+  "name": "story-loader",
+  "version": "0.1.0",
+  "description": "Ren'Py-style .story DSL compiler for visual novels. Zero dependencies, pure logic, works in Node.js and browser.",
+  "main": "index.js",
+  "files": [
+    "index.js"
+  ],
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "renpy",
+    "visual-novel",
+    "dsl",
+    "compiler",
+    "ink",
+    "story",
+    "parser"
+  ],
+  "license": "MIT"
+}

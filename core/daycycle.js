@@ -8,29 +8,46 @@
 
 const DayCycle = (() => {
 
-  // 每天行动点上限（可在各章调整）
-  const DAY_AP = 2;        // 白天行动点数
-  const NIGHT_AP = 1;      // 夜晚行动点数
-
-  // 每日最多休息次数（自然节奏：白天→夜晚 1 次 + 夜晚→次日 1 次）。
-  // 防刷：限制免费推进时段刷 AP / 每日限量重置。
-  const DAILY_REST_LIMIT = 2;
-
-  // 行动点消耗约定
-  const COST = {
-    explore: 1,   // 探索/移动到地点
-    chat: 1,      // 对话/支线
-    fight: 1,     // 巡逻/战斗
-    craft: 0,     // 合成
-    rest: 0,      // 休息（推进到夜晚/次日）——不消耗 AP，但受每日次数限制（DAILY_REST_LIMIT）
-    travel: 1,    // 区域交通（车站传送）
+  // ---- 默认配置（未配置时与现状一致）----
+  const DEFAULT_CONFIG = {
+    dayAP: 2,          // 白天行动点数
+    nightAP: 1,        // 夜晚行动点数
+    dailyRestLimit: 2, // 每日最多休息次数（自然节奏：白天→夜晚 1 次 + 夜晚→次日 1 次）。防刷：限制免费推进时段刷 AP。
+    // 行动点消耗约定（白月默认值；外部可用 configure({cost}) 覆盖）
+    cost: {
+      explore: 1,   // 探索/移动到地点
+      chat: 1,      // 对话/支线
+      fight: 1,     // 巡逻/战斗
+      craft: 0,     // 合成
+      rest: 0,      // 休息（推进到夜晚/次日）——不消耗 AP，但受每日次数限制（dailyRestLimit）
+      travel: 1,    // 区域交通（车站传送）
+    },
   };
+
+  let config = {
+    dayAP: DEFAULT_CONFIG.dayAP,
+    nightAP: DEFAULT_CONFIG.nightAP,
+    dailyRestLimit: DEFAULT_CONFIG.dailyRestLimit,
+    cost: Object.assign({}, DEFAULT_CONFIG.cost),
+  };
+
+  // 外部配置覆盖入口：只传需要覆盖的键，未覆盖的保持现状。
+  // configure({ cost:{...}, dayAP, nightAP, dailyRestLimit })；返回当前配置快照。
+  function configure(opts = {}) {
+    if (opts && typeof opts === 'object') {
+      if (typeof opts.dayAP === 'number') config.dayAP = opts.dayAP;
+      if (typeof opts.nightAP === 'number') config.nightAP = opts.nightAP;
+      if (typeof opts.dailyRestLimit === 'number') config.dailyRestLimit = opts.dailyRestLimit;
+      if (opts.cost && typeof opts.cost === 'object') Object.assign(config.cost, opts.cost);
+    }
+    return { dayAP: config.dayAP, nightAP: config.nightAP, dailyRestLimit: config.dailyRestLimit, cost: Object.assign({}, config.cost) };
+  }
 
   // 从存档状态读取/初始化日程字段
   function ensure(S) {
     if (typeof S.day !== 'number' || S.day < 1) S.day = 1;
     if (!S.phase) S.phase = 'day';
-    if (typeof S.ap !== 'number') S.ap = S.phase === 'day' ? DAY_AP : NIGHT_AP;
+    if (typeof S.ap !== 'number') S.ap = S.phase === 'day' ? config.dayAP : config.nightAP;
     if (!S.dayCounters) S.dayCounters = {};
     if (!S.eventCounts || typeof S.eventCounts !== 'object' || Array.isArray(S.eventCounts)) S.eventCounts = {};
     if (!S.restCounts || typeof S.restCounts !== 'object' || Array.isArray(S.restCounts)) S.restCounts = { day: S.day, count: 0 };
@@ -40,12 +57,12 @@ const DayCycle = (() => {
   function getDay(S) { ensure(S); return S.day; }
   function getPhase(S) { ensure(S); return S.phase; }
   function getAP(S) { ensure(S); return S.ap; }
-  function maxAP(S) { ensure(S); return S.phase === 'day' ? DAY_AP : NIGHT_AP; }
+  function maxAP(S) { ensure(S); return S.phase === 'day' ? config.dayAP : config.nightAP; }
 
   // 尝试消耗行动点；返回是否成功
   function spend(S, action) {
     ensure(S);
-    const cost = COST[action] ?? 1;
+    const cost = config.cost[action] ?? 1;
     if (S.ap < cost) return false;
     S.ap -= cost;
     return true;
@@ -61,7 +78,8 @@ const DayCycle = (() => {
   // 今日剩余可休息次数；返回 { ok, count, limit, remaining }
   function restLeft(S) {
     const count = restCount(S);
-    return { ok: count < DAILY_REST_LIMIT, count, limit: DAILY_REST_LIMIT, remaining: Math.max(0, DAILY_REST_LIMIT - count) };
+    const limit = config.dailyRestLimit;
+    return { ok: count < limit, count, limit, remaining: Math.max(0, limit - count) };
   }
 
   // 推进：白天 -> 夜晚 -> 次日白天
@@ -76,20 +94,20 @@ const DayCycle = (() => {
     S.restCounts = { day: S.day, count: left.count + 1 };
     if (S.phase === 'day') {
       S.phase = 'night';
-      S.ap = NIGHT_AP;
+      S.ap = config.nightAP;
       return { ok: true, from: 'day', to: 'night', day: S.day, count: left.count + 1, remaining: left.remaining - 1 };
     }
     // night -> next day
     S.phase = 'day';
     S.day += 1;
-    S.ap = DAY_AP;
+    S.ap = config.dayAP;
     if (S.chapter) S.dayCounters[S.chapter] = (S.dayCounters[S.chapter] || 0) + 1;
     return { ok: true, from: 'night', to: 'day', day: S.day, count: left.count + 1, remaining: left.remaining - 1 };
   }
 
-  // 休息（COST.rest = 0，不耗行动点）：推进时段，用于"无事可做"时。
+  // 休息（cost.rest = 0，不耗行动点）：推进时段，用于"无事可做"时。
   // 与 advance 区别：rest 语义上表示"就地休息等待"，结果相同（推进到夜晚/次日并刷新行动点）。
-  // 两者共用每日休息次数限制（DAILY_REST_LIMIT），超限返回 { ok:false, reason:'daily_rest_limit' }。
+  // 两者共用每日休息次数限制（dailyRestLimit），超限返回 { ok:false, reason:'daily_rest_limit' }。
   function rest(S) { return advance(S); }
 
   // 当前章已过天数（用于主线触发门槛）
@@ -131,7 +149,11 @@ const DayCycle = (() => {
   }
 
   return {
-    DAY_AP, NIGHT_AP, DAILY_REST_LIMIT, COST,
+    get DAY_AP() { return config.dayAP; },
+    get NIGHT_AP() { return config.nightAP; },
+    get DAILY_REST_LIMIT() { return config.dailyRestLimit; },
+    get COST() { return config.cost; },
+    configure,
     ensure, getDay, getPhase, getAP, maxAP,
     spend, advance, rest, restCount, restLeft, chapterDays, mainReady,
     eventCount, canTriggerEvent, recordEvent,

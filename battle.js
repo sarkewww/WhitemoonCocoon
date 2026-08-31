@@ -8,35 +8,18 @@ const Battle = (() => {
   let ctx = null;
   let animId = 0;
 
-  // ===== 道具 / 材料 / 配方 数据表 =====
-  const ITEMS = {
-    potion:   { name:'魂愈药水', desc:'恢复 35% HP', kind:'heal', heal:0.35 },
-    mega_potion: { name:'月光圣水', desc:'恢复 70% HP', kind:'heal', heal:0.70 },
-    ether:    { name:'灵力凝露', desc:'恢复 40% SP', kind:'sp', sp:0.40 },
-    mega_ether: { name:'白月凝露', desc:'恢复 80% SP', kind:'sp', sp:0.80 },
-    sedative: { name:'镇魂药剂', desc:'侵蚀 -12', kind:'ero', ero:-12 },
-    tear:     { name:'银泪结晶', desc:'恢复 30% HP + 侵蚀 -8', kind:'combo', heal:0.30, ero:-8 },
-    shard:    { name:'苍月碎片', desc:'下回合攻击 +50%', kind:'buff', buff:'atk' },
-    memory_amulet: { name:'记忆防护符', desc:'侵蚀 -15', kind:'ero', ero:-15 },
-    dream_bandage: { name:'织梦绷带', desc:'恢复 30% SP', kind:'sp', sp:0.30 },
-  };
-  const MATERIALS = {
-    tentacle_frag: { name:'触手残片', desc:'魔物的残骸，隐隐蠕动' },
-    dark_crystal:  { name:'暗蚀结晶', desc:'浓缩的侵蚀之力，用于强化武器' },
-    essence:       { name:'魂之精华', desc:'契约者力量的沉淀' },
-    moon_petal:    { name:'月见花瓣', desc:'在月光下绽放的花瓣，安宁的气息' },
-    memory_shard:  { name:'记忆碎片', desc:'封存着某人记忆的碎片，在月光下微微发光' },
-    dream_silk:    { name:'织梦丝', desc:'夜之魔物吐出的丝线，缠绕着残留的梦境' },
-  };
-  const RECIPES = {
-    r_potion:  { name:'调和魂愈药水', cost:{ tentacle_frag:2, moon_petal:1 }, out:{ id:'potion', count:1 } },
-    r_ether:   { name:'凝练灵力凝露', cost:{ essence:1, moon_petal:2 }, out:{ id:'ether', count:1 } },
-    r_sedative:{ name:'炼制镇魂药剂', cost:{ dark_crystal:1, moon_petal:3 }, out:{ id:'sedative', count:1 } },
-    r_tear:    { name:'凝成银泪结晶', cost:{ essence:2, moon_petal:2 }, out:{ id:'tear', count:1 } },
-    r_mega:    { name:'升华月光圣水', cost:{ potion:2, essence:1, moon_petal:2 }, out:{ id:'mega_potion', count:1 } },
-    r_memory_amulet: { name:'结缘记忆防护符', cost:{ memory_shard:2, moon_petal:2 }, out:{ id:'memory_amulet', count:1 } },
-    r_dream_bandage: { name:'织造织梦绷带', cost:{ dream_silk:2, essence:1 }, out:{ id:'dream_bandage', count:1 } },
-  };
+  // ===== 道具 / 材料 / 配方（唯一数据源：core/data.js 的 window.Data）=====
+  function resolveData() {
+    return (typeof window !== 'undefined' && window.Data) ||
+           (typeof Data !== 'undefined' ? Data : null);
+  }
+  const DATA = resolveData();
+  const ITEMS = (DATA && DATA.getAllItems) ? DATA.getAllItems() : {};
+  const MATERIALS = (DATA && DATA.getAllMaterials) ? DATA.getAllMaterials() : {};
+  const RECIPES = (DATA && DATA.getAllRecipes) ? DATA.getAllRecipes() : {};
+  function getItemDef(id)   { const D = resolveData(); return D && D.getItem   ? D.getItem(id)   : null; }
+  function getMaterialDef(id){ const D = resolveData(); return D && D.getMaterial ? D.getMaterial(id) : null; }
+  function getSkillDef(id)  { const D = resolveData(); return D && D.getSkill  ? D.getSkill(id)  : null; }
 
   // ---- 粒子系统 ----
   const FX = {
@@ -225,15 +208,9 @@ const Battle = (() => {
   }
 
   function getActionKey(act) {
-    switch(act) {
-      case 'strike': return '苍月斩';
-      case 'pure': return '净化之矢';
-      case 'guard': return '防御';
-      case 'erosion': return '蚀心之触';
-      case 'heal': return '魂愈';
-      case 'ultimate': return '白月破晓';
-      default: return act;
-    }
+    const sk = getSkillDef(act);
+    if (sk && sk.name) return sk.name;
+    return act;
   }
 
   // ---- 弱点/相克倍率（玩家技能命中敌人 weak 时生效）----
@@ -349,7 +326,8 @@ const Battle = (() => {
       }
       else if (action === 'strike') {
         Sfx.playerHit();
-        const r = computeDamage(pl, enemy, { mult: (buff?1.5:1.0), skillType:'strike' });
+        const skStrike = getSkillDef('strike') || {};
+        const r = computeDamage(pl, enemy, { mult: (buff?1.5:1.0) * (skStrike.mult || 1.0), skillType:'strike' });
         buff = false;
         enemy.hp = Math.max(0, enemy.hp - r.dmg);
         S.damageDealt += r.dmg;
@@ -358,17 +336,19 @@ const Battle = (() => {
         S.sp = Engine.clamp(S.sp + 5, 0, S.maxSp);
         UI.shakeEnemy();
         FX.burstCenter(UI.enemyEl(), { color:'#7fd8ff', count:14, speed:200 });
-        UI.battleLog(`绫音挥出苍月斩—— 「${r.crit?'会心一击！':'命中'}」 ${r.dmg} 点伤害${r.weakHit?'（弱点克制！）':''}。`, r.crit?'crit':'player-hit');
+        UI.battleLog(`绫音挥出${getActionKey('strike')}—— 「${r.crit?'会心一击！':'命中'}」 ${r.dmg} 点伤害${r.weakHit?'（弱点克制！）':''}。`, r.crit?'crit':'player-hit');
         if (r.crit) { Sfx.crit(); UI.flashCrit(); }
         spawnDmg(UI.enemyEl(), r.dmg, r.crit?'crit':'blue');
         UI.updateEnemyBar(enemy);
         if (enemy.counter) { await enemy.counter(enemy, pl, ctx); }
       }
       else if (action === 'pure') {
-        if (S.sp < 20) { UI.battleLog('灵力不足，无法释放净化之矢。','info'); Sfx.click(); return playerPhase(); }
-        S.sp -= 20;
+        const skPure = getSkillDef('pure') || {};
+        const pureCost = skPure.cost || 20;
+        if (S.sp < pureCost) { UI.battleLog(`灵力不足，无法释放${getActionKey('pure')}。`,'info'); Sfx.click(); return playerPhase(); }
+        S.sp -= pureCost;
         Sfx.skill();
-        const r = computeDamage(pl, enemy, { mult: 1.7, isSkill:true, skillType:'pure' });
+        const r = computeDamage(pl, enemy, { mult: (skPure.mult || 1.7), isSkill:true, skillType:'pure' });
         enemy.hp = Math.max(0, enemy.hp - r.dmg);
         S.damageDealt += r.dmg;
         combo++;
@@ -376,27 +356,30 @@ const Battle = (() => {
         S.sp = Engine.clamp(S.sp + 2, 0, S.maxSp);
         UI.shakeEnemy(true);
         FX.burstCenter(UI.enemyEl(), { color:'#c78fff', count:26, speed:260 });
-        UI.battleLog(`净化之矢贯穿魔物—— 「${r.crit?'会心！':'命中'}」 ${r.dmg} 点伤害${r.weakHit?'（弱点克制！）':''}。`, r.crit?'crit':'player-hit');
+        UI.battleLog(`${getActionKey('pure')}贯穿魔物—— 「${r.crit?'会心！':'命中'}」 ${r.dmg} 点伤害${r.weakHit?'（弱点克制！）':''}。`, r.crit?'crit':'player-hit');
         if (r.crit) { Sfx.crit(); UI.flashCrit(); }
         spawnDmg(UI.enemyEl(), r.dmg, r.crit?'crit':'purple');
         UI.updateEnemyBar(enemy);
         if (enemy.counter) { await enemy.counter(enemy, pl, ctx); }
       }
       else if (action === 'erosion') {
+        const skErosion = getSkillDef('erosion') || {};
+        const erosionCost = skErosion.cost || 25;
+        const erosionGain = skErosion.eroCost || 8;
         if (S.ero >= 100) { UI.battleLog('侵蚀已达临界，无法再调用禁忌之力。','info'); return playerPhase(); }
-        if (S.sp < 25) { UI.battleLog('灵力不足，无法催动蚀心之触。','info'); Sfx.click(); return playerPhase(); }
-        S.sp -= 25;
+        if (S.sp < erosionCost) { UI.battleLog(`灵力不足，无法催动${getActionKey('erosion')}。`,'info'); Sfx.click(); return playerPhase(); }
+        S.sp -= erosionCost;
         Sfx.ero();
-        const r = computeDamage(pl, enemy, { mult: 2.4, isSkill:true, ignoreDef:true, skillType:'erosion' });
+        const r = computeDamage(pl, enemy, { mult: (skErosion.mult || 2.4), isSkill:true, ignoreDef:(skErosion.ignoreDef !== false), skillType:'erosion' });
         enemy.hp = Math.max(0, enemy.hp - r.dmg);
         S.damageDealt += r.dmg;
-        S.ero = Engine.clamp(S.ero + 8, 0, 100);
+        S.ero = Engine.clamp(S.ero + erosionGain, 0, 100);
         combo += 2;
         UI.setCombo(combo);
         UI.shakeEnemy(true);
         UI.shakeHard();
         FX.burstCenter(UI.enemyEl(), { color:'#ff5f6f', count:34, speed:320, size:4 });
-        UI.battleLog(`蚀心之触从她体内涌出—— 魔物被撕裂！ ${r.dmg} 点伤害${r.weakHit?'（弱点克制！）':''}！ 侵蚀 +8。`, 'big');
+        UI.battleLog(`${getActionKey('erosion')}从她体内涌出—— 魔物被撕裂！ ${r.dmg} 点伤害${r.weakHit?'（弱点克制！）':''}！ 侵蚀 +${erosionGain}。`, 'big');
         if (r.crit) { Sfx.crit(); UI.flashCrit(); }
         spawnDmg(UI.enemyEl(), r.dmg, 'crit');
         UI.updateEnemyBar(enemy);
@@ -404,12 +387,15 @@ const Battle = (() => {
         if (enemy.counter) { await enemy.counter(enemy, pl, ctx); }
       }
       else if (action === 'heal') {
-        if (S.sp < 15) { UI.battleLog('灵力不足，无法施展魂愈。','info'); Sfx.click(); return playerPhase(); }
-        S.sp -= 15;
+        const skHeal = getSkillDef('heal') || {};
+        const healCost = skHeal.cost || 15;
+        const healPct = skHeal.heal != null ? skHeal.heal : 0.28;
+        if (S.sp < healCost) { UI.battleLog(`灵力不足，无法施展${getActionKey('heal')}。`,'info'); Sfx.click(); return playerPhase(); }
+        S.sp -= healCost;
         Sfx.heal();
-        const heal = Math.round(S.maxHp * 0.28);
+        const heal = Math.round(S.maxHp * healPct);
         S.hp = Math.min(S.maxHp, S.hp + heal);
-        UI.battleLog(`魂愈之光流转全身—— HP 恢复 ${heal}。`, 'heal');
+        UI.battleLog(`${getActionKey('heal')}之光流转全身—— HP 恢复 ${heal}。`, 'heal');
         spawnDmg(UI.playerEl(), '+'+heal, 'heal');
         UI.renderBattleBars();
       }
@@ -418,7 +404,8 @@ const Battle = (() => {
         ultimateReady = false;
         Sfx.ultimate();
         UI.transformFlash();
-        const r = computeDamage(pl, enemy, { mult: 3.8, isSkill:true, ignoreDef:true, isCrit:true, skillType:'ultimate' });
+        const skUlt = getSkillDef('ultimate') || {};
+        const r = computeDamage(pl, enemy, { mult: (skUlt.mult || 3.8), isSkill:true, ignoreDef:(skUlt.ignoreDef !== false), isCrit:true, skillType:'ultimate' });
         enemy.hp = Math.max(0, enemy.hp - r.dmg);
         S.damageDealt += r.dmg;
         combo += 3;
@@ -427,7 +414,7 @@ const Battle = (() => {
         UI.shakeHard();
         FX.burstCenter(UI.enemyEl(), { color:'#ffffff', count:44, speed:360, size:4 });
         FX.burstCenter(UI.enemyEl(), { color:'#8f8fff', count:40, speed:300 });
-        UI.battleLog(`「白月破晓——」 月华化为利刃贯穿苍穹！ ${r.dmg} 点毁灭性伤害！`, 'big');
+        UI.battleLog(`「${getActionKey('ultimate')}——」 月华化为利刃贯穿苍穹！ ${r.dmg} 点毁灭性伤害！`, 'big');
         UI.flashCrit();
         spawnDmg(UI.enemyEl(), r.dmg, 'crit');
         UI.updateEnemyBar(enemy);
@@ -437,7 +424,7 @@ const Battle = (() => {
         const itemId = await UI.promptItem();
         if (ended || myId !== animId) return;
         if (!itemId) { UI.battleLog('取消使用。','info'); return playerPhase(); }
-        const it = ITEMS[itemId];
+        const it = getItemDef(itemId);
         if (!it || !Engine.removeItem(itemId, 1)) { UI.battleLog('没有该道具。','info'); return playerPhase(); }
         if (it.kind === 'heal') {
           const h = Math.round(S.maxHp * it.heal);
@@ -554,7 +541,7 @@ const Battle = (() => {
         const num = Math.floor(n + Math.random());
         if (num > 0) {
           Engine.addMaterial(m, num);
-          dropped.push((MATERIALS[m]?.name || m) + ' ×' + num);
+          dropped.push((getMaterialDef(m)?.name || m) + ' ×' + num);
         }
       }
       if (dropped.length) UI.battleLog('获得材料：' + dropped.join('、'), 'info');
@@ -611,7 +598,7 @@ const Battle = (() => {
       // 充能积累检查
       if (combo >= ULT_THRESHOLD && !ultimateReady) {
         ultimateReady = true;
-        UI.battleLog('白月之力已充盈！ 可释放「白月破晓」！', 'sys');
+        UI.battleLog(`白月之力已充盈！ 可释放「${getActionKey('ultimate')}」！`, 'sys');
       }
 
       // bind 缠缚

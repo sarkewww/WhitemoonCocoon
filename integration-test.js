@@ -53,7 +53,7 @@ global.removeEventListener = ()=>{};
 global.setInterval = () => {};
 global.clearInterval = () => {};
 
-const ids = ['boot','bootLogo','bootText','bootHint','game','story','storyText','choices','battle','battleLog','battleMenu','enemyZone','playerZone','hudName','hudSub','hudChapter','hudTime','statusBox','savebar','cmd','dialog','dialogBox','end','endArt','endTitle','endSub','endStats','storyScroll','battleBars','arena','fx','battleStage','endRestart','endTitleBtn','menuBtn','panel','panelBody','panelClose'];
+const ids = ['boot','bootLogo','bootText','bootHint','game','story','storyText','choices','battle','battleLog','battleMenu','enemyZone','playerZone','hudName','hudSub','hudChapter','hudTime','statusBox','savebar','cmd','dialog','dialogBox','end','endArt','endTitle','endSub','endStats','storyScroll','battleBars','arena','fx','battleStage','endRestart','endTitleBtn','menuBtn','panel','panelBody','panelClose','map','mapHead','mapCanvas','mapNodes','mapSvg','mapFoot','mapActions','toast'];
 createTree(ids);
 global.document = {
   getElementById: id => byId[id] || null,
@@ -69,6 +69,12 @@ new Function(fs.readFileSync(path.join(__dirname,'enemies.js'),'utf8'))(global);
 global.App = {};
 new Function(fs.readFileSync(path.join(__dirname,'story-data.js'),'utf8'))();
 global.Battle = new Function('window','document', fs.readFileSync(path.join(__dirname,'battle.js'),'utf8')+'\nreturn Battle;')(global, global.document);
+// 对话渲染模块（main.js 依赖 window.DialogueUI，须先加载）
+new Function(fs.readFileSync(path.join(__dirname,'ui','dialogue.js'),'utf8'))();
+// 地图/战斗/菜单 UI 模块（main.js 依赖 window.MapUI/BattleUI/MenuUI，须先加载）
+new Function(fs.readFileSync(path.join(__dirname,'ui','map.js'),'utf8'))();
+new Function(fs.readFileSync(path.join(__dirname,'ui','battle.js'),'utf8'))();
+new Function(fs.readFileSync(path.join(__dirname,'ui','menu.js'),'utf8'))();
 global.App = new Function('window','document','Engine','Story','Battle', fs.readFileSync(path.join(__dirname,'main.js'),'utf8')+'\nreturn App;')(global, global.document, global.Engine, global.Story, global.Battle);
 App.setTypeSpeed(0); // 测试中跳过打字机动画
 

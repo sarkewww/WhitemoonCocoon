@@ -25,13 +25,20 @@ const storyCode = fs.readFileSync(path.join(dir, 'story.js'), 'utf8');
 const Story = new Function(storyCode + '\n return Story;')();
 global.Story = Story;
 
-// 3. core/world.js（导出到 window + module.exports）
+// 3. core/world-data.js（数据层，设置 window.WorldData，供 world.js 自动注册）
+require(path.join(dir, 'core', 'world-data.js'));
+
+// 4. core/world.js（导出到 window + module.exports）
 const World = require(path.join(dir, 'core', 'world.js'));
 global.World = World;
 
 // 4. core/daycycle.js
 const DayCycle = require(path.join(dir, 'core', 'daycycle.js'));
 global.DayCycle = DayCycle;
+
+// 4.5 config/game-config.js（主线场景配置，供 core/game.js 读取；须在 game.js 之前注入）
+const GameConfig = require(path.join(dir, 'config', 'game-config.js'));
+global.GameConfig = GameConfig;
 
 // 5. core/game.js（闭包引用全局 Engine/World/DayCycle，view 空对象+守卫兜底，仅做纯逻辑验证）
 const Game = require(path.join(dir, 'core', 'game.js'));
@@ -500,7 +507,7 @@ t('Data.getRecipe 返回配方对象', () => {
 
 t('Data.getSkill 返回技能对象', () => {
   const sk = Data.getSkill('strike');
-  if (!sk || sk.name !== '净化斩' || sk.kind !== 'physical' || sk.mult !== 1.0) throw new Error('strike 查询失败');
+  if (!sk || sk.name !== '苍月斩' || sk.kind !== 'physical' || sk.mult !== 1.0) throw new Error('strike 查询失败');
   if (Data.getSkill('nope') !== null) throw new Error('不存在技能应返回 null');
 });
 
@@ -720,6 +727,57 @@ t('主线断点：存档读档后进度保留', () => {
   if (!st.mainline || st.mainline[1] !== saved) throw new Error('读档后进度应保留，实际 ' + (st.mainline && st.mainline[1]));
 });
 
+// ==================== 主线配置化（config/game-config.js） ====================
+t('主线配置：window.GameConfig 已注入（config/game-config.js）', () => {
+  if (!GameConfig) throw new Error('GameConfig 未定义');
+  if (GameConfig.mainlineStart[1] !== 'chapter1_1') throw new Error('mainlineStart[1] 应为 chapter1_1');
+  if (!Array.isArray(GameConfig.mainlineSteps[1])) throw new Error('mainlineSteps[1] 应为数组');
+});
+
+t('主线配置：未注入配置（空配置）时 advanceMainline 返回无剧情不崩溃', () => {
+  Game.setMainlineConfig({}); // 清空配置，模拟无 GameConfig 环境
+  const S = resetGame(1, { chapter: 1, dayCounters: { 1: 5 } }); // 天数充足但仍无剧情
+  const rs0 = viewCalls.runStory;
+  const r = Game.advanceMainline(1, 1);
+  if (r.unlocked !== true) throw new Error('天数充足应已解锁，实际 ' + JSON.stringify(r));
+  if (r.scene !== null) throw new Error('空配置应返回 scene:null（该章节没有主线剧情），实际 ' + r.scene);
+  if (viewCalls.runStory !== rs0) throw new Error('空配置不应触发 runStory');
+  if (viewCalls.log.length === 0) throw new Error('空配置应有"没有主线剧情"提示');
+  Game.setMainlineConfig(null); // 恢复真实配置
+});
+
+t('主线配置：未注入配置（空配置）时 getMainlineGate 不崩溃', () => {
+  Game.setMainlineConfig({});
+  const S = resetGame(1, { chapter: 1, dayCounters: {} });
+  const gate = Game.getMainlineGate(1);
+  if (typeof gate.unlocked !== 'boolean') throw new Error('getMainlineGate 应返回 gate 结构，实际 ' + JSON.stringify(gate));
+  Game.setMainlineConfig(null);
+});
+
+t('主线配置：注入配置后正常推进（自定义章节）', () => {
+  Game.setMainlineConfig({
+    mainlineStart: { 9: 'test_ch9_start' },
+    mainlineSteps: { 9: ['test_ch9_break_1'] },
+  });
+  const S = resetGame(9, { chapter: 9, dayCounters: { 9: 1 } });
+  const rs0 = viewCalls.runStory;
+  const r = Game.advanceMainline(9, 1);
+  if (r.unlocked !== true) throw new Error('应已解锁，实际 ' + JSON.stringify(r));
+  if (r.scene !== 'test_ch9_start') throw new Error('应从注入的起点播放，实际 ' + r.scene);
+  if (r.progress !== 'test_ch9_break_1') throw new Error('进度应为注入的断点，实际 ' + r.progress);
+  if (viewCalls.runStory !== rs0 + 1) throw new Error('应触发 runStory 1 次');
+  if (S.mainline[9] !== 'test_ch9_break_1') throw new Error('进度记录应为 test_ch9_break_1，实际 ' + S.mainline[9]);
+  Game.setMainlineConfig(null);
+});
+
+t('主线配置：空配置下 advanceMainline 未解锁时不崩溃', () => {
+  Game.setMainlineConfig({});
+  const S = resetGame(1, { chapter: 1, dayCounters: {} });
+  const r = Game.advanceMainline(1, 1);
+  if (r.unlocked !== false) throw new Error('未解锁应返回 unlocked=false');
+  Game.setMainlineConfig(null);
+});
+
 t('每日限量：重复战斗每天最多 2 次', () => {
   const S = resetGame(6, { ap: 5, chapter: 3, dayCounters: {}, phase: 'day', eventCounts: {} });
   Game.explore(6, 'loc_fight');
@@ -937,6 +995,86 @@ for (const m of ch3DualMatrix) {
     }
   });
 }
+
+// ==================== 配置化回归（core/daycycle.js + core/events.js） ====================
+
+t('Events.configure 换字段名后 affinity/meter1/meter2 条件仍能判断', () => {
+  Events.configure({ affinityField: 'rel', meter1Field: 'mood', meter2Field: 'hope' });
+  try {
+    const S = { rel: { taro: 3 }, mood: 30, hope: 60, flags: {}, vars: {} };
+    if (!Events.checkCondition({ affinity: 'taro', value: 3 }, S)) throw new Error('affinity taro>=3 应通过');
+    if (Events.checkCondition({ affinity: 'taro', value: 5 }, S)) throw new Error('affinity taro>=5 应不通过');
+    if (!Events.checkCondition({ meter1: 30 }, S)) throw new Error('meter1>=30 应通过');
+    if (Events.checkCondition({ meter1: 50 }, S)) throw new Error('meter1>=50 应不通过');
+    if (!Events.checkCondition({ meter2: 60 }, S)) throw new Error('meter2>=60 应通过');
+    if (Events.checkCondition({ meter2: 80 }, S)) throw new Error('meter2>=80 应不通过');
+    // 旧字段名别名仍指向通用概念（读新配置字段）
+    if (!Events.checkCondition({ trust: 'taro', value: 3 }, S)) throw new Error('trust 别名应读新字段 rel');
+    if (!Events.checkCondition({ ero: 30 }, S)) throw new Error('ero 别名应读新字段 mood');
+    if (!Events.checkCondition({ anchor: 60 }, S)) throw new Error('anchor 别名应读新字段 hope');
+  } finally {
+    Events.configure({ affinityField: 'trust', meter1Field: 'ero', meter2Field: 'anchor' });
+  }
+});
+
+t('Events 默认 trust/ero/anchor 行为与旧版一致（回归）', () => {
+  Events.configure({ affinityField: 'trust', meter1Field: 'ero', meter2Field: 'anchor' });
+  const S = { trust: { taro: 3 }, ero: 30, anchor: 60, flags: {}, vars: {} };
+  if (!Events.checkCondition({ trust: 'taro', value: 3 }, S)) throw new Error('默认 trust taro>=3 应通过');
+  if (Events.checkCondition({ trust: 'taro', value: 5 }, S)) throw new Error('默认 trust taro>=5 应不通过');
+  if (!Events.checkCondition({ ero: 30 }, S)) throw new Error('默认 ero>=30 应通过');
+  if (Events.checkCondition({ ero: 50 }, S)) throw new Error('默认 ero>=50 应不通过');
+  if (!Events.checkCondition({ anchor: 60 }, S)) throw new Error('默认 anchor>=60 应通过');
+  if (Events.checkCondition({ anchor: 80 }, S)) throw new Error('默认 anchor>=80 应不通过');
+  // 通用名在默认映射下同样工作
+  if (!Events.checkCondition({ affinity: 'taro', value: 3 }, S)) throw new Error('默认 affinity 应读 trust');
+  if (!Events.checkCondition({ meter1: 30 }, S)) throw new Error('默认 meter1 应读 ero');
+  if (!Events.checkCondition({ meter2: 60 }, S)) throw new Error('默认 meter2 应读 anchor');
+});
+
+t('DayCycle.configure 覆盖 COST 后 spend 用新值', () => {
+  DayCycle.configure({ cost: { explore: 2 } });
+  try {
+    const S = freshState({ phase: 'day', ap: 1 });
+    if (DayCycle.spend(S, 'explore') !== false) throw new Error('cost=2 ap=1 时应失败');
+    if (S.ap !== 1) throw new Error('失败不应扣点，实际 ap=' + S.ap);
+    S.ap = 3;
+    if (!DayCycle.spend(S, 'explore')) throw new Error('cost=2 ap=3 应成功');
+    if (S.ap !== 1) throw new Error('应扣 2 点，剩余 ' + S.ap);
+    // 未覆盖键保持默认
+    if (DayCycle.COST.chat !== 1) throw new Error('chat cost 应保持默认 1，实际 ' + DayCycle.COST.chat);
+    // 外部 COST 导出为 live getter，反映新值
+    if (DayCycle.COST.explore !== 2) throw new Error('DayCycle.COST.explore 应为 2，实际 ' + DayCycle.COST.explore);
+  } finally {
+    DayCycle.configure({ cost: { explore: 1 } });
+  }
+});
+
+t('DayCycle.configure 覆盖 dayAP/nightAP/dailyRestLimit', () => {
+  DayCycle.configure({ dayAP: 3, nightAP: 2, dailyRestLimit: 1 });
+  try {
+    const S = {};
+    DayCycle.ensure(S);
+    if (S.ap !== 3) throw new Error('dayAP=3 时应初始化 ap=3，实际 ' + S.ap);
+    if (DayCycle.maxAP(S) !== 3) throw new Error('maxAP 白天应为 3');
+    if (DayCycle.DAY_AP !== 3 || DayCycle.NIGHT_AP !== 2) throw new Error('导出常量应反映新配置');
+    if (DayCycle.DAILY_REST_LIMIT !== 1) throw new Error('导出 DAILY_REST_LIMIT 应为 1');
+    if (!DayCycle.rest(S)) throw new Error('第 1 次休息应成功');
+    const r2 = DayCycle.rest(S);
+    if (r2.ok !== false || r2.reason !== 'daily_rest_limit') throw new Error('dailyRestLimit=1 时第 2 次休息应被拒');
+    // 未覆盖键保持默认
+    if (DayCycle.COST.explore !== 1) throw new Error('cost 应保持默认');
+  } finally {
+    DayCycle.configure({ dayAP: 2, nightAP: 1, dailyRestLimit: 2 });
+  }
+});
+
+t('DayCycle.configure 未传参数返回当前配置快照且不改状态', () => {
+  const snap = DayCycle.configure();
+  if (snap.dayAP !== 2 || snap.nightAP !== 1 || snap.dailyRestLimit !== 2) throw new Error('默认快照不符，实际 ' + JSON.stringify(snap));
+  if (snap.cost.explore !== 1) throw new Error('默认 cost.explore 应为 1');
+  if (DayCycle.COST.explore !== 1) throw new Error('configure() 空调用不应改状态');
+});
 
 // ---- 汇总输出（等待 async 测试完成）----
 Promise.all(asyncTests).then(() => {

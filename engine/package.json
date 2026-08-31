@@ -1,0 +1,35 @@
+{
+  "name": "rpg-html-engine",
+  "version": "0.1.0",
+  "description": "白月茧响引擎层清单包：RPG HTML 引擎（core 逻辑层 + ui 渲染层 + engine.js 状态核 + battle.js 战斗 + story-loader DSL）。模块以全局 script 方式运行（window.*），本包仅汇总路径与说明用途，供其他项目引用。",
+  "main": "index.js",
+  "type": "commonjs",
+  "files": [
+    "core/",
+    "ui/",
+    "engine.js",
+    "battle.js",
+    "story-loader/",
+    "index.js",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./story-loader": "./story-loader/index.js"
+  },
+  "scripts": {
+    "test": "node story-loader/test.js",
+    "check": "node --check index.js && node -e \"require('./index.js')\""
+  },
+  "keywords": [
+    "rpg",
+    "engine",
+    "html5",
+    "visual-novel",
+    "renpy",
+    "browser-game",
+    "story",
+    "dialogue"
+  ],
+  "license": "MIT"
+}
