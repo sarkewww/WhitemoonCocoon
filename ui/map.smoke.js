@@ -161,6 +161,36 @@ assert(dialogs.length === 1 && dialogs[0] === '这里没有事可做', 'onCurren
 MapUI.renderMapFoot(1, '白天', 2);
 assert(dom.mapFoot.children.length === 2, 'renderMapFoot 独立调用');
 
+// 任务按钮：renderMapFoot 应在 actions 内渲染"任务"按钮
+{
+  const actionsEl = dom.mapFoot.children[1];
+  const questBtn = actionsEl.children.find(c => c.textContent === '任务');
+  assert(!!questBtn, 'renderMapFoot 渲染"任务"按钮');
+  assert(questBtn.className.indexOf('quest-btn') !== -1, '任务按钮含 quest-btn 类');
+}
+
+// 倒计时徽章：有未完成死任务时 mapHead 渲染 ⚠ N天
+{
+  global.Quests = {
+    getDeadlineStates: () => [
+      { id: 'dl1_nest', name: '母巢孵化', remain: 3, done: false },
+      { id: 'dl2_cocoon', name: '铃的茧', remain: 1, done: false },
+    ],
+  };
+  MapUI.renderMapView(testMap, 'a', { day: 1, phase: 'day', ap: 2 });
+  assert(dom.mapHead.innerHTML.indexOf('map-deadline') !== -1, 'mapHead 渲染死任务徽章');
+  assert(dom.mapHead.innerHTML.indexOf('⚠ 1天') !== -1, '徽章显示最短剩余天数 1天');
+  assert(dom.mapHead.innerHTML.indexOf('map-deadline-urgent') !== -1, 'remain<=2 徽章闪红');
+  // 全部完成时无徽章
+  global.Quests = { getDeadlineStates: () => [{ id: 'dl1_nest', remain: 0, done: true }] };
+  MapUI.renderMapView(testMap, 'a', { day: 1, phase: 'day', ap: 2 });
+  assert(dom.mapHead.innerHTML.indexOf('map-deadline') === -1, '死任务全完成时不显示徽章');
+  // 无 Quests 防御
+  delete global.Quests;
+  MapUI.renderMapView(testMap, 'a', { day: 1, phase: 'day', ap: 2 });
+  assert(dom.mapHead.innerHTML.indexOf('map-deadline') === -1, '无 Quests 时徽章防御不渲染');
+}
+
 MapUI.initMapDrag();
 assert(true, 'initMapDrag 挂载不抛错');
 

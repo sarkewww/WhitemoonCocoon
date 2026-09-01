@@ -86,8 +86,20 @@ window.MapUI = (() => {
 
     if (D.mapHead) {
       const apWarn = ap <= 0 ? ' ap-warn' : '';
+      // 倒计时徽章（死任务）
+      let dlBadge = '';
+      if (typeof Quests !== 'undefined' && Quests.getDeadlineStates) {
+        const dls = Quests.getDeadlineStates(S);
+        const pending = dls.filter(d => !d.done);
+        if (pending.length) {
+          const minRemain = Math.min.apply(null, pending.map(d => d.remain));
+          const urgent = minRemain <= 2 ? ' map-deadline-urgent' : '';
+          dlBadge = '<span id="mapDeadlineBadge" class="map-deadline' + urgent + '">⚠ ' + minRemain + '天</span>';
+        }
+      }
       D.mapHead.innerHTML = '<span class="map-title">第' + ch + '章 · 夜见市</span><span class="map-info">第' + day + '天 · ' + phaseName + '</span>' +
-        '<span id="mapApBadge" class="map-ap' + apWarn + '">AP ' + ap + '/' + H.maxAPOf() + '</span>';
+        '<span id="mapApBadge" class="map-ap' + apWarn + '">AP ' + ap + '/' + H.maxAPOf() + '</span>' +
+        dlBadge;
     }
 
     const svg = D.mapSvg || (typeof document !== 'undefined' && document.getElementById('mapSvg'));
@@ -270,10 +282,19 @@ window.MapUI = (() => {
     equipBtn.className = 'map-btn';
     equipBtn.textContent = '装备';
     equipBtn.addEventListener('click', () => { if (H.guardFreePhase('装备')) H.showEquipPanel(); });
+    // 任务面板按钮（hooks.showQuestPanel 由接线层注入；缺省走全局 QuestUI）
+    const questBtn = document.createElement('button');
+    questBtn.className = 'map-btn quest-btn';
+    questBtn.textContent = '任务';
+    questBtn.addEventListener('click', () => {
+      const open = H.showQuestPanel || (typeof window !== 'undefined' && window.QuestUI && window.QuestUI.showQuestPanel);
+      if (open) open();
+    });
     actions.appendChild(restBtn);
     actions.appendChild(mainBtn);
     actions.appendChild(shopBtn);
     actions.appendChild(equipBtn);
+    actions.appendChild(questBtn);
     // 车站：区域间唯一交通枢纽 —— 提供"旅行"按钮
     const inStation = typeof Game !== 'undefined' && Game.getCurrentLoc && Game.getCurrentLoc() === 'station';
     if (inStation) {

@@ -11,6 +11,10 @@ const Engine = (() => {
 
   const SAVE_KEY = 'wmc_save_v1';
   const AUTO_KEY = 'wmc_auto_v1';
+  const SLOT_PREFIX = 'wmc_slot_';
+  const INDEX_KEY = 'wmc_saves_v1';
+  const SAVE_VERSION = 2;
+  const SLOT_COUNT = 4;
 
   // ---- 可配置默认值（白月默认基线）----
   const DEFAULT_CONFIG = {
@@ -199,10 +203,8 @@ const Engine = (() => {
   }
 
   function saveSlot() {
-    try {
-      localStorage.setItem(SAVE_KEY, serialize(state));
-      return true;
-    } catch (e) { return false; }
+    const r = saveToSlot(1);
+    return !!(r && r.ok);
   }
 
   // 迁移：为旧存档补齐新字段默认值
@@ -252,23 +254,33 @@ const Engine = (() => {
   }
 
   function loadSlot() {
-    try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return false;
-      state = migrateState(deserialize(raw));
-      return true;
-    } catch (e) { return false; }
+    return !!loadFromSlot(1);
   }
 
   function clearSlot() {
     try { localStorage.removeItem(SAVE_KEY); } catch(e) {}
+    deleteSlot(1);
   }
   function clearAuto() {
-    try { localStorage.removeItem(AUTO_KEY); } catch(e) {}
+    try {
+      localStorage.removeItem(AUTO_KEY);
+      const idx = readIndex();
+      if (idx && idx.slots) delete idx.slots['auto'];
+      writeIndex(idx);
+    } catch(e) {}
   }
 
   function autoSave() {
-    try { localStorage.setItem(AUTO_KEY, serialize(state)); } catch(e) {}
+    try {
+      if (!state) return { ok:false, error:'无游戏状态' };
+      const meta = buildMeta();
+      const data = { __meta: meta, state };
+      localStorage.setItem(AUTO_KEY, JSON.stringify(data));
+      const idx = readIndex();
+      idx.slots['auto'] = meta;
+      writeIndex(idx);
+      return { ok:true, savedAt: meta.savedAt };
+    } catch(e) { return { ok:false, error: (e && e.message) ? e.message : String(e) }; }
   }
 
   function hasAuto() {
@@ -279,9 +291,169 @@ const Engine = (() => {
     try {
       const raw = localStorage.getItem(AUTO_KEY);
       if (!raw) return false;
-      state = migrateState(deserialize(raw));
+      const parsed = JSON.parse(raw);
+      const st = (parsed && parsed.__meta && parsed.state) ? parsed.state : parsed;
+      state = migrateState(st);
       return true;
     } catch(e){ return false; }
+  }
+
+  // ---- 多槽位存档 / 索引 / 迁移 ----
+
+  function slotKey(n) { return SLOT_PREFIX + n; }
+
+  function readIndex() {
+    try {
+      const raw = localStorage.getItem(INDEX_KEY);
+      if (!raw) return { slots: {} };
+      const idx = JSON.parse(raw);
+      if (!idx || typeof idx !== 'object' || !idx.slots || typeof idx.slots !== 'object') return { slots: {} };
+      return idx;
+    } catch (e) { return { slots: {} }; }
+  }
+
+  function writeIndex(idx) {
+    try { localStorage.setItem(INDEX_KEY, JSON.stringify(idx)); return true; }
+    catch (e) { return false; }
+  }
+
+  function buildMeta(s) {
+    s = s || getState();
+    return {
+      v: SAVE_VERSION,
+      savedAt: Date.now(),
+      scene: (s && s.scene) || '',
+      chapter: (s && s.chapter) || 0,
+      day: (s && s.day) || 1,
+      difficulty: (s && s.difficulty) || 'normal',
+      playTime: (s && s.playTime) || 0,
+    };
+  }
+
+  // 旧档迁移（幂等）：wmc_save_v1 → slot_1；wmc_auto_v1 无 __meta 包装 → 包一层
+  function ensureMigrated() {
+    try {
+      const oldRaw = localStorage.getItem(SAVE_KEY);
+      if (oldRaw) {
+        let parsed = null;
+        try { parsed = JSON.parse(oldRaw); } catch (e) { parsed = null; }
+        if (parsed) {
+          const meta = {
+            v: SAVE_VERSION, savedAt: 0,
+            scene: parsed.scene || '', chapter: parsed.chapter || 0,
+            day: parsed.day || 1, difficulty: parsed.difficulty || 'normal',
+            playTime: parsed.playTime || 0,
+          };
+          localStorage.setItem(slotKey(1), JSON.stringify({ __meta: meta, state: parsed }));
+          const idx = readIndex();
+          idx.slots['1'] = meta;
+          writeIndex(idx);
+        }
+        localStorage.removeItem(SAVE_KEY);
+      }
+      const autoRaw = localStorage.getItem(AUTO_KEY);
+      if (autoRaw) {
+        let parsed = null;
+        try { parsed = JSON.parse(autoRaw); } catch (e) { parsed = null; }
+        if (parsed && !(parsed.__meta && parsed.state)) {
+          const meta = {
+            v: SAVE_VERSION, savedAt: 0,
+            scene: parsed.scene || '', chapter: parsed.chapter || 0,
+            day: parsed.day || 1, difficulty: parsed.difficulty || 'normal',
+            playTime: parsed.playTime || 0,
+          };
+          localStorage.setItem(AUTO_KEY, JSON.stringify({ __meta: meta, state: parsed }));
+          const idx = readIndex();
+          idx.slots['auto'] = meta;
+          writeIndex(idx);
+        }
+      }
+    } catch (e) {}
+  }
+
+  function saveToSlot(n) {
+    try {
+      if (!state) return { ok:false, error:'无游戏状态' };
+      const meta = buildMeta();
+      localStorage.setItem(slotKey(n), JSON.stringify({ __meta: meta, state }));
+      const idx = readIndex();
+      idx.slots[String(n)] = meta;
+      writeIndex(idx);
+      return { ok:true, meta };
+    } catch (e) { return { ok:false, error: (e && e.message) ? e.message : String(e) }; }
+  }
+
+  function loadFromSlot(n) {
+    try {
+      const raw = localStorage.getItem(slotKey(n));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const st = (parsed && parsed.__meta && parsed.state) ? parsed.state : parsed;
+      const migrated = migrateState(st);
+      setState(migrated);
+      return migrated;
+    } catch (e) { return null; }
+  }
+
+  function deleteSlot(n) {
+    try {
+      localStorage.removeItem(slotKey(n));
+      const idx = readIndex();
+      delete idx.slots[String(n)];
+      writeIndex(idx);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function listSaves() {
+    ensureMigrated();
+    const idx = readIndex();
+    const slots = (idx && idx.slots) || {};
+    const out = [{ slot:'auto', meta: slots['auto'] || null }];
+    for (let i = 1; i <= SLOT_COUNT; i++) {
+      out.push({ slot:String(i), meta: slots[String(i)] || null });
+    }
+    return out;
+  }
+
+  function getAutoMeta() {
+    ensureMigrated();
+    try {
+      const idx = readIndex();
+      return (idx.slots && idx.slots['auto']) || null;
+    } catch (e) { return null; }
+  }
+
+  function getSlotMeta(n) {
+    ensureMigrated();
+    try {
+      const idx = readIndex();
+      return (idx.slots && idx.slots[String(n)]) || null;
+    } catch (e) { return null; }
+  }
+
+  function hasAnySave() {
+    ensureMigrated();
+    try {
+      const idx = readIndex();
+      const slots = (idx && idx.slots) || {};
+      for (const k of Object.keys(slots)) if (slots[k]) return true;
+      if (localStorage.getItem(AUTO_KEY)) return true;
+      for (let i = 1; i <= SLOT_COUNT; i++) if (localStorage.getItem(slotKey(i))) return true;
+      return false;
+    } catch (e) { return false; }
+  }
+
+  // 旧 API 别名（任务要求保留 saveGame/loadGame 兼容）
+  function saveGame() { return saveToSlot(1); }
+  function loadGame() { return loadFromSlot(1); }
+
+  // 时间戳格式化：'YYYY-MM-DD HH:mm:ss'（zh 格式，补零）
+  function fmtSavedAt(ms) {
+    if (typeof ms !== 'number' || isNaN(ms) || ms <= 0) return '';
+    const d = new Date(ms);
+    const p = n => String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
   }
 
   // ---- 标记 ----
@@ -644,6 +816,8 @@ const Engine = (() => {
   return {
     SAVE_KEY, newGame, serialize, deserialize,
     saveSlot, loadSlot, clearSlot, clearAuto, autoSave, hasAuto, loadAuto, migrateState,
+    saveToSlot, loadFromSlot, deleteSlot, listSaves, getAutoMeta, getSlotMeta, hasAnySave,
+    saveGame, loadGame, fmtSavedAt,
     flag, setFlag, getVar, setVar, addVar,
     setStat, healFull, clamp, learnSkill, hasSkill,
     getState, setState, setG, getG, formatTime, getDifficultyMult,

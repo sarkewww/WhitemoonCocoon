@@ -123,16 +123,17 @@ t('所有场景 next 引用有效', () => {
 });
 
 t('结局场景 choices 逻辑', () => {
-  const ch3 = Story.get('chapter3_8');
-  // chapter3_8 被覆盖为 getter
+  // 动态结局 getter 已从 chapter3_8 移到 chapter3_9（修复跳过 #1 叙事的 bug）
+  const ch3 = Story.get('chapter3_9');
   const state = Engine.newGame();
   state.ero = 40;
+  state.trust = { yuki: 70, suzu: 70, hagoromo: 70 };
   Engine.setState(state);
   const choices = ch3.choices;
-  if (choices.length !== 4) throw new Error('隐藏结局未出现，len='+choices.length);
+  if (choices.length !== 7) throw new Error('隐藏结局未出现，len='+choices.length);
   state.ero = 80;
   const choices2 = ch3.choices;
-  if (choices2.length !== 3) throw new Error('侵蚀高时应无隐藏结局，len='+choices2.length);
+  if (choices2.length !== 6) throw new Error('侵蚀高时应无隐藏结局，len='+choices2.length);
 });
 
 // 统计场景数量
@@ -607,6 +608,105 @@ t('Engine.configure 自定义角色/计量条后行为正常', () => {
   if (s.atk !== atkBefore + 5) throw new Error('自定义羁绊 atk 加成未并入，实际 '+(s.atk-atkBefore));
   // 重置回默认，避免影响后续
   Engine.resetConfig();
+});
+
+// ===== 多槽位存档系统（独立于上方 store，先清空模拟存储）=====
+for (const k of Object.keys(store)) delete store[k];
+
+t('saveToSlot/loadFromSlot 往返 + __meta 不污染 state', () => {
+  const s = Engine.newGame();
+  s.flags.multiSlot = true; s.vars.c = 7;
+  Engine.setState(s);
+  const r = Engine.saveToSlot(1);
+  if (!r.ok) throw new Error('saveToSlot 应成功: '+JSON.stringify(r));
+  if (!r.meta || r.meta.v !== 2) throw new Error('meta 缺 v2');
+  if (typeof r.meta.savedAt !== 'number' || r.meta.savedAt <= 0) throw new Error('meta.savedAt 缺失');
+  const s2 = Engine.newGame();
+  Engine.setState(s2);
+  const loaded = Engine.loadFromSlot(1);
+  if (!loaded) throw new Error('loadFromSlot 应返回 state');
+  if (!loaded.flags.multiSlot || loaded.vars.c !== 7) throw new Error('往返数据丢失');
+  if ('__meta' in loaded) throw new Error('__meta 污染了 state');
+});
+
+t('多槽位相互独立', () => {
+  const a = Engine.newGame(); a.vars.slot = 1; Engine.setState(a); Engine.saveToSlot(1);
+  const b = Engine.newGame(); b.vars.slot = 2; Engine.setState(b); Engine.saveToSlot(2);
+  Engine.setState(Engine.newGame());
+  const la = Engine.loadFromSlot(1);
+  const lb = Engine.loadFromSlot(2);
+  if (la.vars.slot !== 1) throw new Error('slot1 被污染');
+  if (lb.vars.slot !== 2) throw new Error('slot2 被污染');
+});
+
+t('deleteSlot 清槽并更新索引', () => {
+  const s = Engine.newGame(); Engine.setState(s);
+  Engine.saveToSlot(3);
+  if (!Engine.getSlotMeta(3)) throw new Error('save 后应有 meta');
+  if (!Engine.deleteSlot(3)) throw new Error('deleteSlot 应返回 true');
+  if (Engine.getSlotMeta(3)) throw new Error('delete 后 meta 应清空');
+  if (Engine.loadFromSlot(3)) throw new Error('delete 后不应读到档');
+});
+
+t('listSaves 含 meta 与 empty 槽', () => {
+  const s = Engine.newGame(); s.chapter = 2; Engine.setState(s); Engine.saveToSlot(2);
+  const list = Engine.listSaves();
+  if (!Array.isArray(list) || list.length !== 5) throw new Error('listSaves 长度应为 5 (auto+4)');
+  const m = list.find(x => x.slot === '2');
+  if (!m || !m.meta) throw new Error('slot2 应有 meta');
+  if (m.meta.chapter !== 2) throw new Error('meta.chapter 不对');
+  const e = list.find(x => x.slot === '4');
+  if (!e || e.meta !== null) throw new Error('slot4 应标 empty');
+});
+
+t('autoSave 返回 {ok,savedAt} 并更新 auto 索引', () => {
+  const s = Engine.newGame(); Engine.setState(s);
+  const r = Engine.autoSave();
+  if (!r || r.ok !== true) throw new Error('autoSave 应返回 ok:true');
+  if (typeof r.savedAt !== 'number' || r.savedAt <= 0) throw new Error('autoSave 应含 savedAt');
+  const meta = Engine.getAutoMeta();
+  if (!meta || meta.savedAt !== r.savedAt) throw new Error('auto 索引 meta 未更新');
+  if (!Engine.hasAuto()) throw new Error('hasAuto 应为 true');
+  if (!Engine.loadAuto()) throw new Error('loadAuto 应成功');
+});
+
+t('旧 wmc_save_v1 迁移到 slot_1', () => {
+  for (const k of Object.keys(store)) delete store[k];
+  const old = Engine.newGame(); old.flags.legacy = true;
+  localStorage.setItem('wmc_save_v1', JSON.stringify(old));
+  const list = Engine.listSaves();
+  if (localStorage.getItem('wmc_save_v1') !== null) throw new Error('旧 key 应被删除');
+  const m = list.find(x => x.slot === '1');
+  if (!m || !m.meta) throw new Error('旧档应迁到 slot_1');
+  const loaded = Engine.loadFromSlot(1);
+  if (!loaded || loaded.flags.legacy !== true) throw new Error('迁移后数据应可读');
+});
+
+t('旧 wmc_auto_v1 无包装自动包一层', () => {
+  for (const k of Object.keys(store)) delete store[k];
+  const old = Engine.newGame(); old.vars.oldAuto = 1;
+  localStorage.setItem('wmc_auto_v1', JSON.stringify(old));
+  Engine.getAutoMeta();
+  const raw = JSON.parse(localStorage.getItem('wmc_auto_v1'));
+  if (!raw.__meta || !raw.state) throw new Error('auto 旧档应被包装');
+  Engine.setState(Engine.newGame());
+  if (!Engine.loadAuto() || Engine.getVar('oldAuto') !== 1) throw new Error('auto 迁移后读取失败');
+});
+
+t('hasAnySave 检测任意槽', () => {
+  for (const k of Object.keys(store)) delete store[k];
+  if (Engine.hasAnySave()) throw new Error('空存储 hasAnySave 应为 false');
+  const s = Engine.newGame(); Engine.setState(s); Engine.saveToSlot(1);
+  if (!Engine.hasAnySave()) throw new Error('slot1 有档 hasAnySave 应为 true');
+  Engine.deleteSlot(1);
+  if (Engine.hasAnySave()) throw new Error('全删后 hasAnySave 应为 false');
+});
+
+t('fmtSavedAt 格式补零', () => {
+  const d = new Date(2026, 0, 5, 9, 3, 7);
+  const out = Engine.fmtSavedAt(d.getTime());
+  if (out !== '2026-01-05 09:03:07') throw new Error('fmtSavedAt 格式错误: '+out);
+  if (Engine.fmtSavedAt(0) !== '') throw new Error('0 应返回空串');
 });
 
 // ---- 汇总输出（等待 async 测试完成，确保 ALL TESTS PASSED 输出）----

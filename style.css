@@ -516,6 +516,68 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   .inputbar { display:none; }
 }
 @media (orientation: portrait) {
-  /* ����ȷ������������ safe-area ������ס */
+  /* 确保手机端 safe-area 配上 */
   .hud { padding-top:calc(6px + env(safe-area-inset-top)); }
+}
+
+/* ===== 任务面板（quest） ===== */
+.quest-header { font-size:15px; color:var(--accent-hi); margin-bottom:8px; }
+.quest-sec-title { color:var(--border-hi); font-size:10px; letter-spacing:.25em; margin:10px 0 5px; }
+.quest-row { display:flex; justify-content:space-between; align-items:center; gap:6px; padding:5px 6px; margin-bottom:3px; font-size:12px; }
+.quest-row.quest-mainline { background:var(--panel); border:1px solid var(--border); border-left:3px solid var(--accent); padding:7px 10px; }
+.quest-row.quest-side { border-left:2px solid var(--cyan); padding-left:8px; }
+.quest-row.quest-daily { border-left:2px solid var(--gold); padding-left:8px; }
+.quest-row.quest-deadline { border-left:2px solid var(--red); padding-left:8px; }
+.quest-row.quest-deadline.qd-urgent { border-left-color:var(--red-hi); animation:deadlinePulse 1s ease-in-out infinite; }
+.quest-row.quest-deadline.qd-done { opacity:.45; border-left-color:var(--border); }
+.quest-row.quest-dim { color:var(--fg-dim); font-size:11px; justify-content:flex-start; }
+.quest-row.quest-sub { color:var(--fg-dim); font-size:10px; justify-content:flex-start; padding-left:12px; }
+.quest-name { color:var(--accent-hi); font-size:12px; }
+.quest-status { font-size:10px; white-space:nowrap; }
+.qs-locked { color:var(--fg-dim); } .qs-active { color:var(--gold); } .qs-done { color:var(--green); }
+.quest-count { color:var(--fg-dim); font-size:10px; }
+.quest-deadline .quest-status { color:var(--red-hi); font-size:11px; }
+.quest-deadline.qd-urgent .quest-status { animation:deadlinePulse 1s ease-in-out infinite; }
+
+/* ===== 倒计时闪红动画 ===== */
+@keyframes deadlinePulse {
+  0%,100% { opacity:1; text-shadow:0 0 6px rgba(255,95,111,0); }
+  50% { opacity:.55; text-shadow:0 0 14px rgba(255,95,111,.6); }
+}
+
+/* ===== 地图节点倒计时徽章（map-deadline） ===== */
+.map-deadline { display:inline-block; margin-left:6px; padding:0 5px; font-size:10px; color:var(--gold); border:1px solid var(--border); border-radius:3px; background:var(--bg2); }
+.map-deadline.warn { color:var(--red-hi); border-color:var(--red); animation:deadlinePulse .8s ease-in-out infinite; }
+
+/* ===== 存档槽位列表（savebar / 模态框） ===== */
+.savebar .row { display:flex; gap:4px; align-items:center; margin-bottom:3px; }
+.savebar .row .k { font-size:11px; }
+.savebar .row .v { font-size:10px; }
+[data-slotop] { font-size:10px; padding:2px 6px; }
+[data-slotop="load"] { border-left-color:var(--green); color:var(--green); }
+[data-slotop="del"] { border-left-color:var(--red); color:var(--red-hi); }
+[data-slotop="save"] { border-left-color:var(--accent); }
+[data-slotop]:hover { border-color:var(--accent); color:var(--accent-hi); }
+[data-slotop="del"]:hover { border-color:var(--red); color:var(--red-hi); }
+
+/* ===== 每日活动按钮 ===== */
+.daily-go { border-left:3px solid var(--gold); }
+.daily-go:hover { border-color:var(--gold); background:rgba(255,210,125,.08); }
+
+/* ===== 属性加点按钮（save-btn[data-stat]） ===== */
+.save-btn[data-stat] { border-left:3px solid var(--gold); color:var(--accent-hi); font-size:11px; }
+.save-btn[data-stat]:hover { border-color:var(--gold); background:rgba(255,210,125,.08); }
+.save-btn[data-stat="weapon"] { border-left-color:var(--purple); color:var(--purple); }
+.save-btn[data-stat="weapon"]:hover { border-color:var(--purple); background:rgba(199,143,255,.08); }
+.stat-pts { color:var(--gold); font-weight:bold; }
+
+/* ===== 移动端适配 ===== */
+@media (max-width:640px) {
+  .quest-row { font-size:11px; padding:4px 5px; }
+  .quest-name { font-size:11px; }
+  .quest-status { font-size:9px; }
+  .quest-deadline .quest-status { font-size:10px; }
+  .save-btn[data-stat] { min-height:36px; padding:6px 8px; }
+  [data-slotop] { min-height:36px; padding:4px 8px; }
+  .daily-go { min-height:36px; }
 }

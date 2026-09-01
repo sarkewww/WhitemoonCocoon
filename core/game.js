@@ -32,6 +32,9 @@ const Game = (() => {
   let currentLoc = null;
   let dialogueStack = [];   // 对话链（用于返回地图）
 
+  // 死任务失败防重复触发：标记正在失败流程中的 deadline id（避免同帧/同一超期状态重复触发）
+  const dlFailing = new Set();
+
   // 每日可重复触发事件上限（once:false 的重复战斗/事件防刷）
   const DAILY_EVENT_LIMIT = 2;
 
@@ -112,6 +115,7 @@ const Game = (() => {
     const S = Engine.getState();
     S.chapter = c;
     if (typeof DayCycle !== 'undefined') DayCycle.ensure(S);
+    registerChapterDeadlines(c);
     const map = (typeof World !== 'undefined' && World.getMap(c)) || [];
     if (!map.length) { view.log && view.log('该章节暂无地图'); return; }
     currentLoc = locId || map[0].id;
@@ -500,6 +504,15 @@ const Game = (() => {
     if (S.chapter && S.dayCounters && S.dayCounters[S.chapter] >= 1) {
       view.log && view.log('主线似乎已经可以推进了。');
     }
+    // 死任务检查：若有超期且尚未处理，触发失败流程（不继续 map 渲染/事件）
+    const dl = typeof DayCycle !== 'undefined' && DayCycle.checkDeadlines ? DayCycle.checkDeadlines(S) : null;
+    if (dl && dl.expired && dl.expired.length > 0) {
+      const expiredId = dl.expired.find(id => !dlFailing.has(id)) || dl.expired[0];
+      if (expiredId) {
+        triggerDeadlineFail(expiredId);
+        return res;
+      }
+    }
     renderMap();
     tryFireEvent();
     return res;
@@ -521,6 +534,88 @@ const Game = (() => {
     renderMap();
   }
 
+  // ---- 死任务倒计时（deadline）----
+  // 获取归一化死任务列表（含 remain 计算），供 UI 展示。
+  // 结果：{ [id]: { ...S.deadlines[id], currentDays, remain, expired } }
+  function getDeadlines(S) {
+    if (!S) S = Engine.getState();
+    if (!S.deadlines || typeof S.deadlines !== 'object') S.deadlines = {};
+    const result = {};
+    for (const id of Object.keys(S.deadlines)) {
+      const dl = S.deadlines[id];
+      if (!dl) continue;
+      const days = S.dayCounters && typeof S.dayCounters[dl.chapter] === 'number' ? S.dayCounters[dl.chapter] : 0;
+      const dueDay = (dl.startDay ?? 1) + (dl.dueDays ?? 0);
+      result[id] = {
+        ...dl,
+        currentDays: days,
+        remain: Math.max(0, dueDay - days),
+        expired: days >= dueDay,
+      };
+    }
+    return result;
+  }
+
+  // 进入新章节时注册该章的死任务配置
+  // 读取 window.QuestConfig.deadlines[chapter]（若存在），防御：无配置则跳过。
+  function registerChapterDeadlines(chapter) {
+    const deadlinesCfg = (typeof window !== 'undefined' && window.QuestConfig && window.QuestConfig.deadlines) || null;
+    if (!deadlinesCfg) return;
+    const S = Engine.getState();
+    if (typeof DayCycle === 'undefined' || !DayCycle.registerDeadline) return;
+    const chapterDeadlines = deadlinesCfg[chapter];
+    if (!chapterDeadlines || !Array.isArray(chapterDeadlines)) return;
+    for (const cfg of chapterDeadlines) {
+      if (!S.deadlines[cfg.id]) {
+        DayCycle.registerDeadline(S, cfg);
+      }
+    }
+  }
+
+  // 死任务失败流程：播放 fail 场景 → 回滚到 checkpoint → 重置倒计时（重试不死循环）
+  function triggerDeadlineFail(id) {
+    const S = Engine.getState();
+    const dl = S.deadlines && S.deadlines[id];
+    if (!dl) return;
+    if (dl.done || dlFailing.has(id)) return;
+    const checkpoint = dl.checkpoint;
+    if (!checkpoint) return;
+    dlFailing.add(id);
+    const failScene = dl.failScene;
+    const runFail = () => {
+      if (failScene && typeof Story !== 'undefined' && Story.get(failScene)) {
+        return view.runStory ? view.runStory(failScene) : Promise.resolve();
+      }
+      view.log && view.log(`「${id}」——时间已耗尽。你失败了……`);
+      return Promise.resolve();
+    };
+    runFail().then(() => {
+      // 回滚到死任务开始的 checkpoint；checkpoint 是注册前快照，不含该 deadline 本身，
+      // 因此需要把 deadline 重新挂回（保留倒计时、重置 startDay、刷新 checkpoint）。
+      const restored = JSON.parse(JSON.stringify(checkpoint));
+      if (!restored.deadlines || typeof restored.deadlines !== 'object' || Array.isArray(restored.deadlines)) restored.deadlines = {};
+      const ch = dl.chapter;
+      const curDays = (restored.dayCounters && typeof restored.dayCounters[ch] === 'number') ? restored.dayCounters[ch] : 1;
+      // 先累计失败次数，再刷新 checkpoint，保证下次回滚时失败计数保留（跨重试累计）
+      restored.deadlineFailures = (restored.deadlineFailures || 0) + 1;
+      const deadlineRecord = {
+        chapter: ch,
+        startDay: curDays,
+        dueDays: dl.dueDays,
+        bossId: dl.bossId,
+        loc: dl.loc,
+        done: false,
+        failScene: failScene,
+        checkpoint: JSON.parse(JSON.stringify(restored)),
+      };
+      restored.deadlines[id] = deadlineRecord;
+      Engine.setState(restored);
+      dlFailing.delete(id);
+      view.log && view.log('你失败了——时间倒流回死任务开始那天。');
+      returnToMap();
+    });
+  }
+
   return {
     PHASES,
     register, setChapter, getChapter, getPhase, setPhase,
@@ -532,6 +627,7 @@ const Game = (() => {
     setMainlineBoundary, isMainlineBoundary, clearMainlineBoundary,
     mainlineStepRequireDays, getMainlineGate,
     setMainlineConfig, getMainlineConfig,
+    getDeadlines, registerChapterDeadlines, triggerDeadlineFail,
   };
 })();
 

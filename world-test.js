@@ -1076,6 +1076,113 @@ t('DayCycle.configure 未传参数返回当前配置快照且不改状态', () =
   if (DayCycle.COST.explore !== 1) throw new Error('configure() 空调用不应改状态');
 });
 
+// ==================== 死任务倒计时（deadline） ====================
+t('DayCycle.ensure 补 S.deadlines 空对象', () => {
+  const S = freshState({ chapter: 1 });
+  delete S.deadlines;
+  DayCycle.ensure(S);
+  if (!S.deadlines || typeof S.deadlines !== 'object') throw new Error('ensure 应补 deadlines={}');
+  if (Object.keys(S.deadlines).length !== 0) throw new Error('deadlines 初始应为空');
+});
+
+t('DayCycle.registerDeadline 注册任务并保存 checkpoint 快照', () => {
+  const S = freshState({ chapter: 1, dayCounters: { 1: 0 }, hp: 42, ap: 2 });
+  DayCycle.ensure(S);
+  const cfg = { id: 'mother1', chapter: 1, dueDays: 7, bossId: 'mother_boss', loc: 'nest', failScene: 'sc_fail_mother' };
+  const dl = DayCycle.registerDeadline(S, cfg);
+  if (!dl) throw new Error('registerDeadline 应返回任务记录');
+  const rec = S.deadlines['mother1'];
+  if (!rec) throw new Error('S.deadlines 应含该任务');
+  if (rec.chapter !== 1) throw new Error('chapter 错误');
+  if (rec.startDay !== 0) throw new Error('startDay 应为注册时章天数 0，实际 ' + rec.startDay);
+  if (rec.dueDays !== 7) throw new Error('dueDays 错误');
+  if (rec.bossId !== 'mother_boss') throw new Error('bossId 错误');
+  if (rec.loc !== 'nest') throw new Error('loc 错误');
+  if (rec.done !== false) throw new Error('done 默认 false');
+  if (rec.failScene !== 'sc_fail_mother') throw new Error('failScene 错误');
+  if (!rec.checkpoint || typeof rec.checkpoint !== 'object') throw new Error('checkpoint 应存在');
+  if (rec.checkpoint.hp !== 42) throw new Error('checkpoint 应深拷贝 hp');
+  S.hp = 1;
+  if (rec.checkpoint.hp !== 42) throw new Error('checkpoint 应为深拷贝（改 S 不影响快照）');
+});
+
+t('DayCycle.checkDeadlines 未超期返回 active', () => {
+  const S = freshState({ chapter: 1, dayCounters: { 1: 0 } });
+  DayCycle.ensure(S);
+  DayCycle.registerDeadline(S, { id: 'dl1', chapter: 1, dueDays: 7, bossId: 'b', loc: 'x', failScene: 'f' });
+  const r = DayCycle.checkDeadlines(S);
+  if (r.expired.length !== 0) throw new Error('0 天不应超期');
+  if (r.active.indexOf('dl1') < 0) throw new Error('应返回 active');
+});
+
+t('DayCycle.checkDeadlines 超期返回 expired', () => {
+  const S = freshState({ chapter: 1, dayCounters: { 1: 0 } });
+  DayCycle.ensure(S);
+  DayCycle.registerDeadline(S, { id: 'dl1', chapter: 1, dueDays: 7, bossId: 'b', loc: 'x', failScene: 'f' });
+  S.dayCounters[1] = 7;
+  const r = DayCycle.checkDeadlines(S);
+  if (r.expired.indexOf('dl1') < 0) throw new Error('第7天应超期');
+  S.deadlines['dl1'].done = true;
+  const r2 = DayCycle.checkDeadlines(S);
+  if (r2.expired.length !== 0 || r2.active.length !== 0) throw new Error('done 后不应出现在 expired/active');
+});
+
+t('Game.getDeadlines 归一化含 remain/expired', () => {
+  resetGame(1, { chapter: 1, dayCounters: { 1: 3 } });
+  const S = Engine.getState();
+  DayCycle.registerDeadline(S, { id: 'dlG', chapter: 1, dueDays: 7, bossId: 'b', loc: 'x', failScene: 'f' });
+  const dls = Game.getDeadlines(S);
+  if (!dls['dlG']) throw new Error('getDeadlines 应返回该任务');
+  // startDay=3（注册时章天数），dueDays=7 → 到期天=10；当前=3 → remain=10-3=7
+  if (dls['dlG'].startDay !== 3) throw new Error('startDay 应为 3，实际 ' + dls['dlG'].startDay);
+  if (dls['dlG'].remain !== 7) throw new Error('remain 应为 7，实际 ' + dls['dlG'].remain);
+  if (dls['dlG'].expired !== false) throw new Error('不应 expired');
+  if (dls['dlG'].done !== false) throw new Error('done 默认 false');
+});
+
+t('Game.registerChapterDeadlines 从 QuestConfig 注册该章死任务', () => {
+  global.QuestConfig = {
+    deadlines: { 1: [ { id: 'dl_cfg', chapter: 1, dueDays: 5, bossId: 'b', loc: 'x', failScene: 'f' } ] },
+  };
+  try {
+    resetGame(1, { phase: 'day', day: 1, ap: 2, chapter: 1, dayCounters: { 1: 0 } });
+    Game.explore(1);
+    const S = Engine.getState();
+    if (!S.deadlines['dl_cfg']) throw new Error('explore 应注册 QuestConfig 里的死任务');
+  } finally {
+    delete global.QuestConfig;
+  }
+});
+
+// 死任务失败：passTime 超期触发 → 播放失败叙事 → 回滚到 checkpoint → 重置倒计时重试（异步）
+t('Game.passTime 死任务超期触发失败并回滚重试', async () => {
+  resetGame(1, { phase: 'day', day: 1, ap: 2, hp: 30, sp: 10, maxHp: 100, maxSp: 50, chapter: 1, dayCounters: { 1: 0 } });
+  const S = Engine.getState();
+  DayCycle.registerDeadline(S, { id: 'dlA', chapter: 1, dueDays: 1, bossId: 'b', loc: 'x', failScene: 'sc_nope' });
+  // startDay=0 dueDays=1 → dayCounters[1]>=1 即超期
+  Game.passTime(); // day->night：章天数不变 0，未超期
+  Game.passTime(); // night->day：章天数 0->1，超期 → 触发失败（异步回滚）
+  await new Promise(r => setTimeout(r, 10));
+  const S2 = Engine.getState();
+  if (S2.day !== 1) throw new Error('回滚后天数应为 checkpoint 的 1，实际 ' + S2.day);
+  if (S2.ap !== 2) throw new Error('回滚后 AP 应为 checkpoint 的 2，实际 ' + S2.ap);
+  if (S2.hp !== 30) throw new Error('回滚后 HP 应为 checkpoint 的 30，实际 ' + S2.hp);
+  if ((S2.deadlineFailures || 0) !== 1) throw new Error('deadlineFailures 应为 1，实际 ' + S2.deadlineFailures);
+  if (!S2.deadlines || !S2.deadlines['dlA']) throw new Error('回滚后应保留死任务（重试）');
+  if (S2.deadlines['dlA'].done) throw new Error('失败后 done 不应置位');
+  if (S2.deadlines['dlA'].startDay !== 0) throw new Error('回滚后 startDay 应重置为当前章天数 0，实际 ' + S2.deadlines['dlA'].startDay);
+  // 回滚后不应立即超期（防无限循环）
+  const after1 = DayCycle.checkDeadlines(S2);
+  if (after1.expired.length !== 0) throw new Error('回滚后应立即 active 而非 expired');
+  // 重试：再推进一整天 → 再次超期 → 再次失败（计数 +1），startDay 跟随重置
+  Game.passTime();
+  Game.passTime();
+  await new Promise(r => setTimeout(r, 10));
+  const S3 = Engine.getState();
+  if ((S3.deadlineFailures || 0) !== 2) throw new Error('重试超期应再次触发失败，计数应为 2，实际 ' + S3.deadlineFailures);
+  if (!S3.deadlines['dlA'] || S3.deadlines['dlA'].done) throw new Error('重试后死任务应保留且未 done');
+});
+
 // ---- 汇总输出（等待 async 测试完成）----
 Promise.all(asyncTests).then(() => {
   results.forEach(r => console.log(r.join(' | ')));

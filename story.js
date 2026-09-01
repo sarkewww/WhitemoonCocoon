@@ -45,17 +45,20 @@ const Story = (() => {
         ...orig2_end,
         onEnter: (s) => { if (orig2_end.onEnter) orig2_end.onEnter(s); },
         get choices() {
-          return [{ text: '前往异界——源茧的所在地', next: 'ch2_gate_1', chapter: 3 }];
+          return [{ text: '前往潮下界——源茧的所在地', next: 'ch2_gate_1', chapter: 3 }];
         },
       };
     }
 
-    // chapter3_8：根据侵蚀度动态注入隐藏结局选项（白月结局）
-    const orig3_8 = scenes['chapter3_8'];
-    if (orig3_8) {
-      scenes['chapter3_8'] = {
-        ...orig3_8,
-        onEnter: (s) => { if (orig3_8.onEnter) orig3_8.onEnter(s); },
+    // chapter3_9：根据侵蚀度动态注入隐藏结局选项（白月结局）
+    // 【修复】原来挂在 chapter3_8 上：chapter3_8 有 next: chapter3_9，但一旦带 choices，
+    // 引擎在 chapter3_8 渲染选项，chapter3_9 的 #1 三个选择叙事（关键 exposition）会被跳过。
+    // 现改为挂到 chapter3_9（静态基础三选项与下方 getter 的 options 一致，隐藏选项合并显示）。
+    const orig3_9 = scenes['chapter3_9'];
+    if (orig3_9) {
+      scenes['chapter3_9'] = {
+        ...orig3_9,
+        onEnter: (s) => { if (orig3_9.onEnter) orig3_9.onEnter(s); },
         get choices() {
           const st = Engine.getState();
           const choices = [

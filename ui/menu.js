@@ -29,6 +29,10 @@ window.MenuUI = (() => {
   let _timerInterval = null;
   let selectedDiff = 'normal';
 
+  // 存档面板模态框刷新/关闭回调（由 showSlotsPanel 登记，槽位操作后刷新）
+  let _slotsRender = null;
+  let _slotsClose = null;
+
   const DIFF_NAMES = { easy: '新手', normal: '普通', hard: '困难' };
   const RANK_NAMES = { 1: 'R1', 2: 'R2', 3: 'R3', 4: 'R4' };
   const CHAR_NAMES = { yuki: '雪', suzu: '铃', hagoromo: '羽衣' };
@@ -168,7 +172,7 @@ window.MenuUI = (() => {
 
     const menu = [
       { key: '1', label: '新的游戏' },
-      { key: '2', label: '继续游戏' + ((typeof Engine !== 'undefined' && Engine.hasAuto) ? (Engine.hasAuto() ? ' (有存档)' : '') : ''), fn: () => loadGame() },
+      { key: '2', label: '继续游戏' + (hasAnySave() ? ' (有存档)' : ''), fn: () => loadGame() },
       { key: '3', label: '难度：' + (DIFF_NAMES[selectedDiff] || '普通'), diff: true },
       { key: '4', label: '关于', fn: () => showAbout() },
     ];
@@ -416,8 +420,9 @@ window.MenuUI = (() => {
       '<div class="row"><button class="save-btn" data-sys="shop">商店（买入/卖出）</button></div>' +
       '<div class="row"><button class="save-btn" data-sys="equip">装备（防具/饰品）</button></div>' : '') +
       '<div class="sec">── 系统 ──</div>' +
-      '<div class="row"><button class="save-btn" data-sys="save">保存</button></div>' +
-      '<div class="row"><button class="save-btn" data-sys="load">读取</button></div>',
+      '<div class="row"><button class="save-btn" data-sys="quest">任务</button></div>' +
+      '<div class="row"><button class="save-btn" data-sys="daily">每日活动</button></div>' +
+      '<div class="row"><button class="save-btn" data-sys="slots">存档</button></div>',
     ].join('');
   }
 
@@ -459,10 +464,23 @@ window.MenuUI = (() => {
     });
     target.querySelectorAll('[data-sys]').forEach(b => {
       b.addEventListener('click', () => {
-        if (b.dataset.sys === 'save') { Engine.autoSave(); showDialog('存档已保存。'); }
-        else if (b.dataset.sys === 'load') {
-          if (Engine.hasAuto()) { Engine.loadAuto(); showDialog('读档完成。'); togglePanel(false); setChoiceLock(false); if (!continueFromSavedScene(Engine.getState().scene)) { runScene(Engine.getState().scene); } }
-          else { showDialog('没有存档。'); }
+        if (b.dataset.sys === 'quest') {
+          togglePanel(false);
+          setTimeout(() => {
+            if (typeof window !== 'undefined' && window.QuestUI && typeof window.QuestUI.showQuestPanel === 'function') {
+              window.QuestUI.showQuestPanel();
+            } else {
+              showToast('任务面板尚未接入', 'warn');
+            }
+          }, 50);
+        }
+        else if (b.dataset.sys === 'daily') {
+          togglePanel(false);
+          setTimeout(() => showDailyPanel(), 50);
+        }
+        else if (b.dataset.sys === 'slots') {
+          togglePanel(false);
+          setTimeout(() => showSlotsPanel(), 50);
         }
         else if (b.dataset.sys === 'shop') {
           togglePanel(false);
@@ -486,35 +504,280 @@ window.MenuUI = (() => {
     }
   }
 
-  function renderSaveBar() {
-    savebar.innerHTML = '<div>存档</div><div class="row"><button class="save-btn" id="btnSave">保存</button><button class="save-btn" id="btnLoad">读取</button></div>';
-    document.getElementById('btnSave').addEventListener('click', () => {
-      const ok = Engine.autoSave();
-      showDialog(ok ? '存档已保存。' : '存档失败（存储空间不足或隐私模式）。');
-    });
-    document.getElementById('btnLoad').addEventListener('click', () => {
-      if (Engine.hasAuto()) {
-        Engine.loadAuto();
-        showDialog('读档完成。');
-        setChoiceLock(false);
-        if (!continueFromSavedScene(Engine.getState().scene)) {
-          runScene(Engine.getState().scene);
-        }
+  // ===== 存档槽位（多槽 UI：auto + 槽1-4） =====
+  function fmtSavedAt(t) {
+    if (t === null || t === undefined || t === '') return '未知时间';
+    let d;
+    if (t instanceof Date) d = t;
+    else if (typeof t === 'number') d = new Date(t);
+    else if (/^\d{13,}$/.test(String(t))) d = new Date(Number(t));
+    else d = new Date(String(t));
+    if (isNaN(d.getTime())) return String(t);
+    const p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+      p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+
+  function slotLabel(slot) {
+    return (String(slot) === 'auto') ? '自动' : '槽' + slot;
+  }
+
+  const CHAPTER_NAMES = ['序章', '第一章', '第二章', '第三章', '终章'];
+  function chapterName(c) {
+    return CHAPTER_NAMES[c] || '第' + ((c || 0) + 1) + '章';
+  }
+
+  function fmtSlotMeta(meta) {
+    if (!meta || typeof meta !== 'object') return '';
+    const parts = [];
+    if (meta.chapter != null) parts.push(chapterName(meta.chapter));
+    if (meta.day != null) parts.push('第' + meta.day + '天');
+    return parts.join('·');
+  }
+
+  function hasAnySave() {
+    if (typeof Engine !== 'undefined' && Engine.hasAnySave) {
+      try { return !!Engine.hasAnySave(); } catch (e) { return false; }
+    }
+    return (typeof Engine !== 'undefined' && Engine.hasAuto) ? !!Engine.hasAuto() : false;
+  }
+
+  function listSavesSafe() {
+    if (typeof Engine !== 'undefined' && Engine.listSaves) {
+      try { return Engine.listSaves() || []; } catch (e) { return []; }
+    }
+    if (typeof Engine !== 'undefined' && Engine.hasAuto && Engine.hasAuto()) {
+      let meta = null;
+      if (typeof Engine.getAutoMeta === 'function') { try { meta = Engine.getAutoMeta(); } catch (e) {} }
+      return [{ slot: 'auto', meta: meta }];
+    }
+    return [];
+  }
+
+  function renderSlotList(saves) {
+    const bySlot = {};
+    for (const s of (saves || [])) {
+      if (s && s.slot != null) bySlot[s.slot] = s;
+    }
+    const slots = ['auto', 1, 2, 3, 4];
+    const rows = [];
+    for (const slot of slots) {
+      const rec = bySlot[slot];
+      const label = slotLabel(slot);
+      if (rec && rec.meta) {
+        const metaTxt = fmtSlotMeta(rec.meta);
+        const stamp = fmtSavedAt(rec.meta.savedAt);
+        rows.push(
+          '<div class="row"><span class="k">[' + label + ']</span><span class="v">' +
+          (metaTxt ? esc(metaTxt) + ' · ' : '') + esc(stamp) + '</span></div>' +
+          '<div class="row">' +
+          '<button class="save-btn" data-slotop="load" data-slotn="' + esc(slot) + '">读取</button>' +
+          '<button class="save-btn" data-slotop="del" data-slotn="' + esc(slot) + '">删除</button>' +
+          '</div>'
+        );
       } else {
-        showDialog('没有存档。');
+        rows.push(
+          '<div class="row"><span class="k">[' + label + ']</span><span class="v gray">空</span></div>' +
+          '<div class="row"><button class="save-btn" data-slotop="save" data-slotn="' + esc(slot) + '">' +
+          (String(slot) === 'auto' ? '自动存档' : '保存到此处') + '</button></div>'
+        );
       }
+    }
+    return rows.join('');
+  }
+
+  function doSave(n) {
+    const isAuto = String(n) === 'auto';
+    let r = null;
+    if (typeof Engine !== 'undefined') {
+      if (isAuto) r = (typeof Engine.autoSave === 'function') ? Engine.autoSave() : null;
+      else r = (typeof Engine.saveToSlot === 'function') ? Engine.saveToSlot(parseInt(n, 10)) : null;
+    }
+    let ok;
+    if (r && typeof r === 'object') ok = !!r.ok;
+    else ok = isAuto && typeof Engine !== 'undefined' && typeof Engine.autoSave === 'function';
+    const savedAt = r ? ((r.meta && r.meta.savedAt) || r.savedAt || Date.now()) : Date.now();
+    showToast(ok ? '已保存 ' + fmtSavedAt(savedAt) : '存档失败（存储空间不足或隐私模式）', ok ? 'info' : 'warn');
+    renderSaveBar();
+    if (_slotsRender) _slotsRender();
+  }
+
+  function doLoad(n) {
+    let loaded = false;
+    const isAuto = String(n) === 'auto';
+    if (typeof Engine !== 'undefined') {
+      if (isAuto) loaded = (typeof Engine.loadAuto === 'function') && !!Engine.loadAuto();
+      else if (typeof Engine.loadFromSlot === 'function') {
+        const r = Engine.loadFromSlot(parseInt(n, 10));
+        if (r) { if (typeof Engine.setState === 'function') Engine.setState(r); loaded = true; }
+      } else if (typeof Engine.loadSlot === 'function') {
+        loaded = !!Engine.loadSlot();
+      }
+    }
+    if (loaded) {
+      const ns = (typeof Engine !== 'undefined' && Engine.getState) ? Engine.getState() : null;
+      if (ns) { ns.retryCount = 0; ns.retryEnemyMult = 1; }
+      showToast('已读取 [' + slotLabel(n) + ']', 'info');
+      setChoiceLock(false);
+      togglePanel(false);
+      if (_slotsClose) _slotsClose();
+      if (ns && !continueFromSavedScene(ns.scene)) runScene(ns.scene);
+    } else {
+      showToast('没有存档。', 'warn');
+    }
+    renderSaveBar();
+    if (_slotsRender) _slotsRender();
+  }
+
+  function doDelete(n) {
+    let ok = false;
+    const isAuto = String(n) === 'auto';
+    if (typeof Engine !== 'undefined') {
+      if (isAuto && typeof Engine.clearAuto === 'function') { Engine.clearAuto(); ok = true; }
+      else if (!isAuto && typeof Engine.deleteSlot === 'function') ok = !!Engine.deleteSlot(parseInt(n, 10));
+      else if (typeof Engine.clearSlot === 'function') { Engine.clearSlot(); ok = true; }
+    }
+    showToast(ok ? '已删除 [' + slotLabel(n) + ']' : '删除失败', ok ? 'info' : 'warn');
+    renderSaveBar();
+    if (_slotsRender) _slotsRender();
+  }
+
+  function bindSlotsActions(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-slotop]').forEach(b => {
+      b.addEventListener('click', () => {
+        const op = b.dataset.slotop;
+        const n = b.dataset.slotn;
+        if (op === 'save') doSave(n);
+        else if (op === 'load') doLoad(n);
+        else if (op === 'del') doDelete(n);
+      });
     });
+  }
+
+  function showSlotsPanel() {
+    const m = openModal();
+    const render = () => {
+      m.box.innerHTML = '<div style="font-size:15px;color:var(--accent-hi);margin-bottom:6px;">存档</div>' +
+        renderSlotList(listSavesSafe());
+      m.box.appendChild(m.esc);
+      bindSlotsActions(m.box);
+    };
+    _slotsRender = render;
+    _slotsClose = m.close;
+    render();
+  }
+
+  function renderSaveBar() {
+    if (!savebar) return;
+    savebar.innerHTML = '<div>存档</div>' + renderSlotList(listSavesSafe());
+    bindSlotsActions(savebar);
   }
 
   function updateHUD() {
     const S = Engine.getState();
-    hudName.textContent = S.name;
     if (S.chapter === 0) hudChapter.textContent = '序章';
     else if (S.chapter === 1) hudChapter.textContent = '第一章';
     else if (S.chapter === 2) hudChapter.textContent = '第二章';
     else if (S.chapter === 3) hudChapter.textContent = '第三章';
     else if (S.chapter === 4) hudChapter.textContent = '终章';
     renderStatus();
+  }
+
+  // ===== 每日活动面板 =====
+  function dailyCount(S, id) {
+    if (id && typeof DayCycle !== 'undefined' && DayCycle.eventCount) {
+      try { return DayCycle.eventCount(S, id) || 0; } catch (e) { return 0; }
+    }
+    return 0;
+  }
+
+  function fmtDailyLoc(it) {
+    const loc = it.loc || it.location || '';
+    let s = '去 ' + (loc || '—');
+    if (loc && it.phase) {
+      const pt = (it.phase === 'night') ? '夜晚' : '白天';
+      if (s.indexOf('·白天') < 0 && s.indexOf('·夜晚') < 0) s += ' · ' + pt;
+    }
+    return s;
+  }
+
+  function collectDailies(S, chapter) {
+    const list = [];
+    const push = (src) => {
+      if (!Array.isArray(src)) return;
+      for (const e of src) {
+        if (!e || typeof e !== 'object') continue;
+        list.push({
+          id: e.id || e.key || '',
+          name: e.name || e.title || '',
+          loc: e.loc || e.location || '',
+          phase: e.phase || e.time || e.when || '',
+          ap: (typeof e.ap === 'number' ? e.ap : (typeof e.cost === 'number' ? e.cost : 1)),
+          reward: e.reward || e.rewards || e.desc || '',
+          type: e.type || '',
+          locId: e.locId || e.locid || '',
+        });
+      }
+    };
+    if (typeof window !== 'undefined' && window.Quests && typeof window.Quests.getAll === 'function') {
+      try {
+        const data = window.Quests.getAll(S, chapter);
+        if (data && Array.isArray(data.dailies)) push(data.dailies);
+      } catch (e) {}
+    }
+    if (typeof window !== 'undefined' && window.QuestConfig && Array.isArray(window.QuestConfig.dailies)) {
+      push(window.QuestConfig.dailies);
+    }
+    return list;
+  }
+
+  function buildDailyHtml(S, chapter) {
+    const items = collectDailies(S, chapter);
+    const phase = (S && S.phase === 'night') ? '夜晚' : '白天';
+    const day = (S && S.day) || 1;
+    const ap = (S && typeof S.ap === 'number') ? S.ap : 0;
+    let html = '<div style="font-size:15px;color:var(--accent-hi);margin-bottom:6px;">每日活动</div>';
+    html += '<div style="font-size:12px;color:var(--gold);margin-bottom:10px;">行动点 ' + ap + '/' + maxAPOf() + ' · ' + phase + ' · 第' + day + '天</div>';
+    if (!items.length) {
+      html += '<div style="color:var(--fg-dim);padding:8px 0;">今天还没有可进行的活动。</div>';
+    } else {
+      for (const it of items) {
+        const cnt = dailyCount(S, it.id);
+        html += '<div class="row">' +
+          '<button class="save-btn daily-go" data-daily="' + esc(it.id) + '" data-locid="' + esc(it.locId || '') + '" style="width:auto;padding:2px 8px;">' + esc(it.name) + '</button>' +
+          '<span class="k">' + esc(fmtDailyLoc(it)) + '</span>' +
+          '<span class="v">AP ' + it.ap + (cnt > 0 ? ' · 今日已做 ' + cnt + ' 次' : '') + '</span>' +
+          (it.reward ? '<span class="v gray" style="font-size:10px;">' + esc(it.reward) + '</span>' : '') +
+          '</div>';
+      }
+    }
+    return html;
+  }
+
+  function showDailyPanel() {
+    const S = (typeof Engine !== 'undefined' && Engine.getState) ? Engine.getState() : null;
+    const m = openModal();
+    m.box.innerHTML = buildDailyHtml(S, S && S.chapter);
+    m.box.appendChild(m.esc);
+    m.box.querySelectorAll('.daily-go').forEach(b => {
+      b.addEventListener('click', () => {
+        const id = b.dataset.daily;
+        const locId = b.dataset.locid;
+        m.close();
+        if (H.goToActivity) {
+          try { H.goToActivity(id); } catch (e) { showToast('活动触发失败', 'warn'); }
+          return;
+        }
+        if (typeof Game !== 'undefined') {
+          if (locId && typeof Game.moveTo === 'function') Game.moveTo(locId);
+          else if (typeof Game.fireAt === 'function') Game.fireAt(locId || id);
+          else showToast('该活动暂不可用', 'warn');
+        } else {
+          showToast('活动系统尚未接入', 'warn');
+        }
+      });
+    });
   }
 
   // ===== 通用模态框（商店/装备面板共用） =====
@@ -792,6 +1055,10 @@ window.MenuUI = (() => {
     // 纯逻辑 / 数据渲染辅助（引擎与测试复用）
     freePhaseGate, fmtConfidantBonus, renderConfidantHtml, buildStatusHtml,
     dataRecipe, dataMaterial, maxAPOf, esc,
+    // 每日活动面板 + 存档槽位（新增）
+    showDailyPanel, showSlotsPanel,
+    fmtSavedAt, slotLabel, chapterName, fmtSlotMeta, hasAnySave, listSavesSafe, renderSlotList,
+    dailyCount, fmtDailyLoc, collectDailies, buildDailyHtml,
   };
 })();
 

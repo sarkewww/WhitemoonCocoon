@@ -51,6 +51,7 @@ const DayCycle = (() => {
     if (!S.dayCounters) S.dayCounters = {};
     if (!S.eventCounts || typeof S.eventCounts !== 'object' || Array.isArray(S.eventCounts)) S.eventCounts = {};
     if (!S.restCounts || typeof S.restCounts !== 'object' || Array.isArray(S.restCounts)) S.restCounts = { day: S.day, count: 0 };
+    if (!S.deadlines || typeof S.deadlines !== 'object' || Array.isArray(S.deadlines)) S.deadlines = {};
     return S;
   }
 
@@ -148,6 +149,49 @@ const DayCycle = (() => {
     return S.eventCounts[id].count;
   }
 
+  // ---- 死任务倒计时（deadline）----
+  // 死任务 = 必须在 XX 天内击败某 Boss 的支线任务；超时即失败（回存档点快照重来）。
+  // S.deadlines[id] = { chapter, startDay, dueDays, bossId, loc, done, failScene, checkpoint }
+  //   startDay   死任务开始时章内已过天数（dayCounters[chapter]）
+  //   dueDays    限时天数（超期判定：dayCounters[chapter] >= startDay + dueDays）
+  //   checkpoint 死任务开始时的全状态快照（JSON 深拷贝），失败时回滚到这里
+  //   done       完成标记（true 后不再检查）
+
+  // 注册一个死任务。checkpoint 为注册瞬间 S 的深拷贝（含 deadline 本身之前的完整状态）。
+  function registerDeadline(S, cfg) {
+    ensure(S);
+    if (!cfg || !cfg.id) return null;
+    const chapter = cfg.chapter;
+    const startDay = (S.dayCounters && typeof S.dayCounters[chapter] === 'number') ? S.dayCounters[chapter] : 1;
+    S.deadlines[cfg.id] = {
+      chapter: chapter,
+      startDay: startDay,
+      dueDays: cfg.dueDays,
+      bossId: cfg.bossId,
+      loc: cfg.loc,
+      done: false,
+      failScene: cfg.failScene,
+      checkpoint: JSON.parse(JSON.stringify(S)),
+    };
+    return S.deadlines[cfg.id];
+  }
+
+  // 检查所有死任务。返回 { expired:[ids], active:[ids] }。
+  // expired：未 done 且已超期；active：未 done 且未超期。已 done 的既不 expired 也不 active。
+  function checkDeadlines(S) {
+    ensure(S);
+    const expired = [];
+    const active = [];
+    for (const id of Object.keys(S.deadlines)) {
+      const dl = S.deadlines[id];
+      if (!dl || dl.done) continue;
+      const days = S.dayCounters && typeof S.dayCounters[dl.chapter] === 'number' ? S.dayCounters[dl.chapter] : 0;
+      if (days >= (dl.startDay ?? 1) + (dl.dueDays ?? 0)) expired.push(id);
+      else active.push(id);
+    }
+    return { expired: expired, active: active };
+  }
+
   return {
     get DAY_AP() { return config.dayAP; },
     get NIGHT_AP() { return config.nightAP; },
@@ -157,6 +201,7 @@ const DayCycle = (() => {
     ensure, getDay, getPhase, getAP, maxAP,
     spend, advance, rest, restCount, restLeft, chapterDays, mainReady,
     eventCount, canTriggerEvent, recordEvent,
+    registerDeadline, checkDeadlines,
   };
 })();
 

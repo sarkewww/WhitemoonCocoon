@@ -22,11 +22,11 @@ assert.strictEqual(GameContent.gameTitle, '白月茧响');
 assert.strictEqual(GameContent.gameTitleEn, 'White Moon · Cocoon');
 assert.strictEqual(GameContent.appTitle, '白月茧响 | White Moon Cocoon');
 assert.strictEqual(GameContent.genre, '黑暗魔法少女 · 文字冒险RPG');
-assert.strictEqual(GameContent.protagonist, '白月绫音（白月凌）');
-assert.strictEqual(GameContent.worldSetting, '夜见市 · 现代都市 · 超能力 · 校园');
+assert.strictEqual(GameContent.protagonist, '白凌（白绫音）');
+assert.strictEqual(GameContent.worldSetting, '杭州 · 现代都市 · 超自然 · 校园');
 
 // ===== charNames（main.js:484）=====
-assert.deepStrictEqual(GameContent.charNames, { yuki: '雪', suzu: '铃', hagoromo: '羽衣' });
+assert.deepStrictEqual(GameContent.charNames, { yuki: '苏雪', suzu: '许铃', hagoromo: '苏羽衣' });
 
 // ===== skillNames（6 个，core/data.js SKILLS / ui/battle.js getActionList）=====
 assert.strictEqual(Object.keys(GameContent.skillNames).length, 6, '应为 6 个技能');
@@ -64,8 +64,8 @@ assert.deepStrictEqual(GameContent.aboutText, [
   '《白月茧响》',
   '黑暗魔法少女 · 文字冒险RPG',
   '',
-  '主角：白月绫音（白月凌）',
-  '世界观：夜见市 · 现代都市 · 超能力 · 校园',
+  '主角：白凌（白绫音）',
+  '世界观：杭州 · 现代都市 · 超自然 · 校园',
   '',
   '触手魔物从人类负面情感中诞生。',
   '与「茧」签订契约，成为魔法少女——',
@@ -81,16 +81,16 @@ assert.deepStrictEqual(GameContent.aboutText, [
 // ===== titleText =====
 assert.ok(Array.isArray(GameContent.titleText.logo) && GameContent.titleText.logo.length > 0, 'titleText.logo 应为非空数组');
 assert.strictEqual(GameContent.titleText.logo[16], '║             白  月  茧  响                    ║', 'logo 第 17 行应为中文标题');
-assert.strictEqual(GameContent.titleText.byline, '> 夜见市 · 星历 2026');
+assert.strictEqual(GameContent.titleText.byline, '> 杭州 · 星历 2026');
 assert.strictEqual(GameContent.titleText.prompt, '按 Enter 或 点击 开始');
 assert.strictEqual(GameContent.titleText.menu.length, 4, '标题菜单应为 4 项');
 assert.strictEqual(GameContent.titleText.menu[0].label, '新的游戏');
 assert.strictEqual(GameContent.titleText.menu[3].label, '关于');
 
 // ===== mapTitles =====
-assert.strictEqual(GameContent.mapTitles.city, '夜见市');
-assert.strictEqual(GameContent.mapTitles.format, '第{ch}章 · 夜见市');
-assert.ok(GameContent.mapTitles.format.indexOf('夜见市') !== -1, 'format 应包含城市名');
+assert.strictEqual(GameContent.mapTitles.city, '杭州');
+assert.strictEqual(GameContent.mapTitles.format, '第{ch}章 · 杭州');
+assert.ok(GameContent.mapTitles.format.indexOf('杭州') !== -1, 'format 应包含城市名');
 
 // ===== 其他内容常量 =====
 assert.deepStrictEqual(GameContent.difficultyNames, { easy: '新手', normal: '普通', hard: '困难' });

@@ -171,6 +171,36 @@ const App = (() => {
     mapFoot = document.getElementById('mapFoot');
     mapActions = document.getElementById('mapActions') || null;
 
+    // ===== 任务栏（quest）接线（防御：ui/quest.js 可能尚未就绪，跳过不崩） =====
+    const QUI = (typeof window !== 'undefined' && window.QuestUI) || null;
+    const showQuestPanel = (QUI && typeof QUI.showQuestPanel === 'function')
+      ? () => QUI.showQuestPanel()
+      : null;
+    if (QUI && typeof QUI.init === 'function') {
+      QUI.init({
+        dom: { panelEl, panelBody, mapEl, storyEl, hudChapter, hudTime, statusBox },
+        hooks: {
+          updateHUD,
+          renderStatus,
+          showToast,
+          showDialog,
+          esc,
+          getDeadlines: (S) => (typeof Game !== 'undefined' && typeof Game.getDeadlines === 'function') ? Game.getDeadlines(S) : null,
+        },
+      });
+    }
+
+    // 存档槽位 hooks（防御：多槽接口可能尚未就绪，缺失则不注入）
+    const saveHooks = {};
+    if (typeof Engine !== 'undefined') {
+      if (typeof Engine.listSaves === 'function') saveHooks.listSaves = () => Engine.listSaves();
+      if (typeof Engine.saveToSlot === 'function') saveHooks.saveToSlot = (n) => Engine.saveToSlot(n);
+      if (typeof Engine.loadFromSlot === 'function') saveHooks.loadFromSlot = (n) => Engine.loadFromSlot(n);
+      if (typeof Engine.deleteSlot === 'function') saveHooks.deleteSlot = (n) => Engine.deleteSlot(n);
+      if (typeof Engine.hasAnySave === 'function') saveHooks.hasAnySave = () => Engine.hasAnySave();
+      if (typeof Engine.fmtSavedAt === 'function') saveHooks.fmtSavedAt = (ms) => Engine.fmtSavedAt(ms);
+    }
+
     // 注入对话渲染模块（DOM + hooks）
     DialogueUI.init({
       dom: {
@@ -203,6 +233,7 @@ const App = (() => {
         showShopPanel,
         showEquipPanel,
         showDialog,
+        showQuestPanel,
       },
     });
 
@@ -238,6 +269,12 @@ const App = (() => {
         startNewGame,
         loadGame,
         showTitle,
+        showQuestPanel,
+        showDailyPanel: () => (typeof MenuUI !== 'undefined' && typeof MenuUI.showDailyPanel === 'function')
+          ? MenuUI.showDailyPanel()
+          : null,
+        getDeadlines: (S) => (typeof Game !== 'undefined' && typeof Game.getDeadlines === 'function') ? Game.getDeadlines(S) : null,
+        ...saveHooks,
       },
     });
 
@@ -245,7 +282,13 @@ const App = (() => {
 
     if (typeof Game !== 'undefined' && Game.register) {
       Game.register({
-        renderMap: (map, curLoc, dayInfo) => renderMapView(map, curLoc, dayInfo),
+        renderMap: (map, curLoc, dayInfo) => {
+          // 防御：进入章节时注册该章死任务（core/game.js explore 亦会调用；此处兜底其他入口）
+          if (typeof Game.registerChapterDeadlines === 'function' && typeof Game.getChapter === 'function') {
+            Game.registerChapterDeadlines(Game.getChapter());
+          }
+          renderMapView(map, curLoc, dayInfo);
+        },
         runStory: (sceneId) => runScene(sceneId),
         runBattle: (enemyId, onWin, onLose) => startBattle({ enemy: enemyId, onWin, onLose }),
         showHud: () => updateHUD(),
@@ -280,6 +323,10 @@ const App = (() => {
     // 存档按钮
     document.getElementById('endRestart').addEventListener('click', () => startNewGame());
     document.getElementById('endTitleBtn').addEventListener('click', () => showBoot());
+
+    // 杭州化文案：文档标题读取 GameContent（不存在则保持 HTML 静态标题）
+    const GC = (typeof window !== 'undefined' && window.GameContent) || null;
+    if (GC && GC.appTitle && document && document.title) document.title = GC.appTitle;
 
     // 初始启动
     bootSequence();
