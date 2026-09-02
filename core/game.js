@@ -84,13 +84,15 @@ const Game = (() => {
   }
 
   // once:false 的重复事件每日限量（once:true 一次性事件不限制）。
+  // 每日上限：优先读事件自带 ev.limit（数字则采用），否则回退默认 DAILY_EVENT_LIMIT。
   function eventLimitOK(S, ev) {
     if (!ev || ev.once) return { ok: true };
     const id = ev.id || ev.scene || ev.enemy;
     if (!id) return { ok: true };
+    const limit = (typeof ev.limit === 'number' && ev.limit >= 0) ? ev.limit : DAILY_EVENT_LIMIT;
     const st = (typeof DayCycle !== 'undefined' && DayCycle.canTriggerEvent)
-      ? DayCycle.canTriggerEvent(S, id, DAILY_EVENT_LIMIT)
-      : { ok: true, count: 0, limit: DAILY_EVENT_LIMIT, remaining: DAILY_EVENT_LIMIT };
+      ? DayCycle.canTriggerEvent(S, id, limit)
+      : { ok: true, count: 0, limit: limit, remaining: limit };
     if (!st.ok) view.log && view.log('这里的状况今天已经熟悉了（今日已遭遇 ' + st.count + '/' + st.limit + ' 次）。');
     return st;
   }
@@ -558,6 +560,9 @@ const Game = (() => {
 
   // 进入新章节时注册该章的死任务配置
   // 读取 window.QuestConfig.deadlines[chapter]（若存在），防御：无配置则跳过。
+  // 每个注册的 deadline 同步置死任务激活 flag：S.flags[cfg.id + '_active'] = true，
+  // 与 world-data 死任务事件 cond 检查保持一致（dl1_nest_active / dl2_burst_active / dl3_source_active），
+  // 否则对应 boss 战事件永远无法被 rollEvent 触发。
   function registerChapterDeadlines(chapter) {
     const deadlinesCfg = (typeof window !== 'undefined' && window.QuestConfig && window.QuestConfig.deadlines) || null;
     if (!deadlinesCfg) return;
@@ -566,8 +571,13 @@ const Game = (() => {
     const chapterDeadlines = deadlinesCfg[chapter];
     if (!chapterDeadlines || !Array.isArray(chapterDeadlines)) return;
     for (const cfg of chapterDeadlines) {
-      if (!S.deadlines[cfg.id]) {
-        DayCycle.registerDeadline(S, cfg);
+      if (cfg && cfg.id) {
+        if (!S.deadlines[cfg.id]) {
+          DayCycle.registerDeadline(S, cfg);
+        }
+        // 死任务激活 flag：注册后置真（已注册也幂等置真，防御旧存档/flag 缺失）。
+        S.flags = S.flags || {};
+        S.flags[cfg.id + '_active'] = true;
       }
     }
   }

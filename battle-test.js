@@ -243,7 +243,34 @@ async function run(){
     }
   });
 
-  // 测试11: dmgReduction 减伤生效（unit test on enemyHit）
+  // 测试11: critChance 是叠加加成（0.05→非技能 8%+5%=13%），不再覆盖基础暴击
+  t('critChance 叠加不覆盖基础暴击', () => {
+    const s = Engine.getState();
+    const { computeDamage } = Battle;
+    const origRandom = Math.random;
+    try {
+      // critChance=0.05：非技能阈值 = 0.08+0.05 = 0.13
+      s.critChance = 0.05;
+      Math.random = () => 0.10;   // 0.10 < 0.13 → 应暴击；旧逻辑 0.10<0.05 → 不暴击（缺陷）
+      const r1 = computeDamage({atk:12, level:1}, {def:4}, {mult:1, isSkill:false});
+      if (!r1.crit) throw new Error('critChance=0.05 时 0.10 应暴击（叠加后 13%）');
+
+      Math.random = () => 0.20;   // 0.20 >= 0.13 → 不应暴击
+      const r2 = computeDamage({atk:12, level:1}, {def:4}, {mult:1, isSkill:false});
+      if (r2.crit) throw new Error('critChance=0.05 时 0.20 不应暴击（13% 上限内）');
+
+      // critChance=0：回到基础 8%
+      s.critChance = 0;
+      Math.random = () => 0.10;   // 0.10 >= 0.08 → 不应暴击
+      const r3 = computeDamage({atk:12, level:1}, {def:4}, {mult:1, isSkill:false});
+      if (r3.crit) throw new Error('critChance=0 时应回到基础 8%（0.10 不暴击）');
+    } finally {
+      Math.random = origRandom;
+      s.critChance = 0;
+    }
+  });
+
+  // 测试12: dmgReduction 减伤生效（unit test on enemyHit）
   t('dmgReduction 减伤生效', () => {
     const { enemyHit } = Battle;
     const noRed = enemyHit(50, 1, 5, false, 0.42, 0);

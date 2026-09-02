@@ -14,7 +14,7 @@ window.DialogueUI = (() => {
   let currentSceneId = '';
   let typing = false;
   let textSkip = false;
-  let endTimer = null;
+  let pendingEnding = null;
   let typeSpeed = 50; // 每字 ms，0=立即显示（测试用）
   let skipResolvers = new Set();
 
@@ -42,8 +42,9 @@ window.DialogueUI = (() => {
 
   // ===== 结局画面 =====
   function scheduleEnding(ending) {
-    if (endTimer) clearTimeout(endTimer);
-    endTimer = setTimeout(() => { endTimer = null; showEnding(ending); }, 3000);
+    // 不再自动定时跳转：仅记录待展示的结局，
+    // 由 runScene 在 end_roll 文本播完后等待用户点击/按键再触发 showEnding
+    pendingEnding = ending;
   }
   function showEnding(ending) {
     if (H.clearTimerInterval) H.clearTimerInterval();
@@ -257,7 +258,7 @@ window.DialogueUI = (() => {
 
     currentSceneId = id;
     S.scene = id;
-    if (endTimer) { clearTimeout(endTimer); endTimer = null; }
+    pendingEnding = null;
     D.storyEl.classList.remove('hidden');
     if (D.mapEl) D.mapEl.classList.add('hidden');
     D.battleEl.classList.add('hidden');
@@ -423,6 +424,20 @@ window.DialogueUI = (() => {
       }
     } else {
       choiceLock = false;
+      // 结局 credit（end_roll）：文本播完后停在画面上，
+      // 显示「点击继续」提示，等待用户点击/按键才进入结局演出
+      if (pendingEnding) {
+        const end = pendingEnding;
+        pendingEnding = null;
+        const hint = document.createElement('div');
+        hint.className = 'hint';
+        hint.textContent = '— 点击任意处继续 —';
+        hint.style.cssText = 'text-align:center;color:var(--fg-dim);animation:blink 1s steps(2) infinite;margin-top:1.5em;';
+        D.storyText.appendChild(hint);
+        D.storyScroll.scrollTop = D.storyScroll.scrollHeight;
+        await waitForClick();
+        showEnding(end);
+      }
     }
   }
 

@@ -22,11 +22,11 @@ assert.strictEqual(GameContent.gameTitle, '白月茧响');
 assert.strictEqual(GameContent.gameTitleEn, 'White Moon · Cocoon');
 assert.strictEqual(GameContent.appTitle, '白月茧响 | White Moon Cocoon');
 assert.strictEqual(GameContent.genre, '黑暗魔法少女 · 文字冒险RPG');
-assert.strictEqual(GameContent.protagonist, '白凌（白绫音）');
+assert.strictEqual(GameContent.protagonist, '白月凌（白月绫音）');
 assert.strictEqual(GameContent.worldSetting, '杭州 · 现代都市 · 超自然 · 校园');
 
 // ===== charNames（main.js:484）=====
-assert.deepStrictEqual(GameContent.charNames, { yuki: '苏雪', suzu: '许铃', hagoromo: '苏羽衣' });
+assert.deepStrictEqual(GameContent.charNames, { yuki: '雪', suzu: '铃', hagoromo: '羽衣' });
 
 // ===== skillNames（6 个，core/data.js SKILLS / ui/battle.js getActionList）=====
 assert.strictEqual(Object.keys(GameContent.skillNames).length, 6, '应为 6 个技能');
@@ -64,7 +64,7 @@ assert.deepStrictEqual(GameContent.aboutText, [
   '《白月茧响》',
   '黑暗魔法少女 · 文字冒险RPG',
   '',
-  '主角：白凌（白绫音）',
+  '主角：白月凌（白月绫音）',
   '世界观：杭州 · 现代都市 · 超自然 · 校园',
   '',
   '触手魔物从人类负面情感中诞生。',

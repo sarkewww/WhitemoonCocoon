@@ -224,8 +224,8 @@ const Battle = (() => {
       // 羁绊被动：读 S.critChance（铃=暴击）。0/undefined 视为无加成，回退基础暴击（回归安全）
       const S = (typeof Engine !== 'undefined' && Engine.getState) ? Engine.getState() : null;
       const baseCrit = isSkill ? 0.12 : 0.08;
-      const cc = (S && S.critChance) || null;
-      crit = Math.random() < (cc ?? baseCrit);
+      const cc = (S && typeof S.critChance === 'number') ? S.critChance : 0;
+      crit = Math.random() < (baseCrit + cc);
     }
     const weakHit = !!(skillType && target && target.weak && skillType === target.weak && WEAK_MULT[skillType]);
     if (weakHit) base *= WEAK_MULT[skillType];

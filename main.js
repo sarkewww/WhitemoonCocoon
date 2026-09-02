@@ -273,6 +273,9 @@ const App = (() => {
         showDailyPanel: () => (typeof MenuUI !== 'undefined' && typeof MenuUI.showDailyPanel === 'function')
           ? MenuUI.showDailyPanel()
           : null,
+        goToActivity: (id) => (typeof MenuUI !== 'undefined' && typeof MenuUI.goToActivity === 'function')
+          ? MenuUI.goToActivity(id)
+          : null,
         getDeadlines: (S) => (typeof Game !== 'undefined' && typeof Game.getDeadlines === 'function') ? Game.getDeadlines(S) : null,
         ...saveHooks,
       },

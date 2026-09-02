@@ -168,6 +168,44 @@ t('getActionList strike 文案与实际一致', () => {
       const s = Engine.getState();
       if (s.scene !== 'chapter1_7') throw new Error('scene='+s.scene);
     });
+
+    // ---- 结局流程：end_roll 场景渲染 + 点击关闭逻辑 ----
+    // end_roll 为结局 credit 场景，无选项/next/battle，文本播完后
+    // 停在画面上等待用户点击/按键（waitForClick）再进入结局演出。
+    // 测试环境无真实点击事件，故仅做结构性断言 + 直接驱动 showEnding 渲染。
+    t('end_roll 场景定义完整', () => {
+      const sc = Story.get('end_roll');
+      if (!sc) throw new Error('Story 缺少 end_roll 场景');
+      if (!Array.isArray(sc.text)) throw new Error('end_roll.text 应为数组');
+      const joined = sc.text.join('\n');
+      if (joined.indexOf('感谢你游玩《白月茧响》') === -1) throw new Error('end_roll 缺少致谢文案');
+      if (sc.choices && sc.choices.length) throw new Error('end_roll 不应有选项');
+      if (!sc.onEnter) throw new Error('end_roll 应有 onEnter（scheduleEnding 入口）');
+    });
+
+    t('end_roll 渲染 credit 画面', () => {
+      // 模拟 end_roll 文本播完后触发的结局演出
+      App.scheduleEnding('白月');
+      DialogueUI.showEnding('白月');
+      if (byId.endArt.textContent.indexOf('白月') === -1) throw new Error('endArt 未渲染结局标题');
+      if (byId.endTitle.textContent !== '白月') throw new Error('endTitle='+byId.endTitle.textContent);
+      if (!byId.endSub.textContent) throw new Error('endSub 为空');
+      if (byId.endStats.innerHTML.indexOf('等级') === -1) throw new Error('endStats 未渲染统计');
+      if (byId.end.classList.contains('hidden')) throw new Error('end 应可见');
+    });
+
+    t('endRestart 点击关闭', () => {
+      byId.end.classList.add('hidden');
+      byId.endRestart.click();
+      if (!byId.end.classList.contains('hidden')) throw new Error('重新开始后 end 应隐藏');
+    });
+
+    t('endTitleBtn 点击关闭', () => {
+      byId.end.classList.add('hidden');
+      byId.endTitleBtn.click();
+      if (!byId.end.classList.contains('hidden')) throw new Error('回到标题后 end 应隐藏');
+    });
+
     console.log('集成测试完成（战斗流程在 battle-test 中验证）');
   } catch(e) {
     console.log('集成测试异常: '+e.message);

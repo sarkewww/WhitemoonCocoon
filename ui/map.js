@@ -84,6 +84,11 @@ window.MapUI = (() => {
     const day = dayInfo ? dayInfo.day : 1;
     const ap = dayInfo ? dayInfo.ap : 0;
 
+    if (D.mapEl) {
+      const isNight = (dayInfo && dayInfo.phase === 'night') || S.phase === 'night';
+      D.mapEl.classList.toggle('map-night', isNight);
+    }
+
     if (D.mapHead) {
       const apWarn = ap <= 0 ? ' ap-warn' : '';
       // 倒计时徽章（死任务）
@@ -97,7 +102,11 @@ window.MapUI = (() => {
           dlBadge = '<span id="mapDeadlineBadge" class="map-deadline' + urgent + '">⚠ ' + minRemain + '天</span>';
         }
       }
-      D.mapHead.innerHTML = '<span class="map-title">第' + ch + '章 · 夜见市</span><span class="map-info">第' + day + '天 · ' + phaseName + '</span>' +
+      // 城市名由 GameContent.mapTitles 提供（防御：未加载则回退 '杭州'）
+      const mt = (typeof window !== 'undefined' && window.GameContent && window.GameContent.mapTitles) || null;
+      const city = (mt && mt.city) || '杭州';
+      const mapTitleStr = (mt && mt.format) ? mt.format.split('{ch}').join(ch) : ('第' + ch + '章 · ' + city);
+      D.mapHead.innerHTML = '<span class="map-title">' + mapTitleStr + '</span><span class="map-info">第' + day + '天 · ' + phaseName + '</span>' +
         '<span id="mapApBadge" class="map-ap' + apWarn + '">AP ' + ap + '/' + H.maxAPOf() + '</span>' +
         dlBadge;
     }
@@ -290,11 +299,11 @@ window.MapUI = (() => {
       const open = H.showQuestPanel || (typeof window !== 'undefined' && window.QuestUI && window.QuestUI.showQuestPanel);
       if (open) open();
     });
+    actions.appendChild(questBtn);  // 任务置首（更显眼）
     actions.appendChild(restBtn);
     actions.appendChild(mainBtn);
     actions.appendChild(shopBtn);
     actions.appendChild(equipBtn);
-    actions.appendChild(questBtn);
     // 车站：区域间唯一交通枢纽 —— 提供"旅行"按钮
     const inStation = typeof Game !== 'undefined' && Game.getCurrentLoc && Game.getCurrentLoc() === 'station';
     if (inStation) {

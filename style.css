@@ -454,6 +454,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .map-btn {
   font-family:var(--mono); font-size:12px; padding:6px 12px; cursor:pointer;
   background:var(--panel); color:var(--accent-hi); border:1px solid var(--border);
+  min-height:44px;
 }
 .map-btn:hover { border-color:var(--accent); }
 .map-desc { color:var(--fg-dim); font-size:12px; flex:1 1 auto; }
@@ -465,6 +466,13 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .map-ap.ap-flash { animation:apFlash .4s ease-in-out 2; }
 @keyframes apPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 @keyframes apFlash { 0%,100%{background:transparent} 50%{background:rgba(255,95,111,.2)} }
+
+/* ---- 地图日/夜切换 ---- */
+.map { transition:background .5s; }
+.map.map-night { background:#07070d; }
+.map.map-night .map-canvas { background:rgba(0,0,0,.15); }
+.map.map-night .map-head { border-bottom-color:#181830; }
+.map.map-night .map-info { color:#5a5a8a; }
 
 /* ---- Toast 提示 ---- */
 .toast {
@@ -506,7 +514,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   .arena { min-height:0; }
   .map-head { padding:6px 12px; }
   .map-foot { padding:5px 12px; }
-  .map-btn { padding:5px 10px; }
+  .map-btn { padding:5px 10px; min-height:38px; }
   .panel { width:min(400px, 80vw); }
 }
 @media (orientation: landscape) and (max-height: 560px) and (min-width: 720px) {
@@ -547,7 +555,8 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 
 /* ===== 地图节点倒计时徽章（map-deadline） ===== */
 .map-deadline { display:inline-block; margin-left:6px; padding:0 5px; font-size:10px; color:var(--gold); border:1px solid var(--border); border-radius:3px; background:var(--bg2); }
-.map-deadline.warn { color:var(--red-hi); border-color:var(--red); animation:deadlinePulse .8s ease-in-out infinite; }
+.map-deadline.warn,
+.map-deadline-urgent { color:var(--red-hi); border-color:var(--red); animation:deadlinePulse .8s ease-in-out infinite; }
 
 /* ===== 存档槽位列表（savebar / 模态框） ===== */
 .savebar .row { display:flex; gap:4px; align-items:center; margin-bottom:3px; }

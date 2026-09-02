@@ -20,14 +20,14 @@
     gameTitleEn: 'White Moon · Cocoon',                     // main.js:247（bootLogo）
     appTitle: '白月茧响 | White Moon Cocoon',               // index.html:12 / manifest name
     genre: '黑暗魔法少女 · 文字冒险RPG',                    // main.js:335
-    protagonist: '白凌（白绫音）',                           // main.js:337（已本地化）
+    protagonist: '白月凌（白月绫音）',                           // main.js:337（已本地化）
     worldSetting: '杭州 · 现代都市 · 超自然 · 校园',          // main.js:338（已本地化）
     // 版本号：main.js / ui/*.js 未定义显式版本常量（manifest 亦无 version 字段），暂以 null 占位
     gameVersion: null,
 
     // ===================== 角色名 =====================
     // 源：main.js:484 CHAR_NAMES / ui/menu.js:34 CHAR_NAMES（两处逐字一致）
-    charNames: { yuki: '苏雪', suzu: '许铃', hagoromo: '苏羽衣' },
+    charNames: { yuki: '雪', suzu: '铃', hagoromo: '羽衣' },
 
     // ===================== 技能显示名（6 个） =====================
     // 源：core/data.js:68-75 SKILLS / ui/battle.js:162-168 getActionList / main.js:727-733
@@ -58,7 +58,7 @@
       '《白月茧响》',
       '黑暗魔法少女 · 文字冒险RPG',
       '',
-      '主角：白凌（白绫音）',
+      '主角：白月凌（白月绫音）',
       '世界观：杭州 · 现代都市 · 超自然 · 校园',
       '',
       '触手魔物从人类负面情感中诞生。',
@@ -109,7 +109,7 @@
     },
 
     // ===================== 地图标题 =====================
-    // 源：main.js:982 / ui/map.js:89 「第' + ch + '章 · 夜见市」（城市名恒定，章节号动态）
+    // 源：main.js:982 / ui/map.js:89 「第' + ch + '章 · 杭州」（城市名恒定，章节号动态）
     mapTitles: {
       city: '杭州',
       format: '第{ch}章 · 杭州',

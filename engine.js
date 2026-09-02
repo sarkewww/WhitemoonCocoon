@@ -254,7 +254,9 @@ const Engine = (() => {
   }
 
   function loadSlot() {
-    return !!loadFromSlot(1);
+    const r = loadFromSlot(1);
+    if (r) setState(r);
+    return !!r;
   }
 
   function clearSlot() {
@@ -271,6 +273,7 @@ const Engine = (() => {
   }
 
   function autoSave() {
+    ensureMigrated();
     try {
       if (!state) return { ok:false, error:'无游戏状态' };
       const meta = buildMeta();
@@ -339,7 +342,7 @@ const Engine = (() => {
         try { parsed = JSON.parse(oldRaw); } catch (e) { parsed = null; }
         if (parsed) {
           const meta = {
-            v: SAVE_VERSION, savedAt: 0,
+            v: SAVE_VERSION, savedAt: null,
             scene: parsed.scene || '', chapter: parsed.chapter || 0,
             day: parsed.day || 1, difficulty: parsed.difficulty || 'normal',
             playTime: parsed.playTime || 0,
@@ -357,7 +360,7 @@ const Engine = (() => {
         try { parsed = JSON.parse(autoRaw); } catch (e) { parsed = null; }
         if (parsed && !(parsed.__meta && parsed.state)) {
           const meta = {
-            v: SAVE_VERSION, savedAt: 0,
+            v: SAVE_VERSION, savedAt: null,
             scene: parsed.scene || '', chapter: parsed.chapter || 0,
             day: parsed.day || 1, difficulty: parsed.difficulty || 'normal',
             playTime: parsed.playTime || 0,
@@ -372,6 +375,7 @@ const Engine = (() => {
   }
 
   function saveToSlot(n) {
+    ensureMigrated();
     try {
       if (!state) return { ok:false, error:'无游戏状态' };
       const meta = buildMeta();
@@ -389,9 +393,7 @@ const Engine = (() => {
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       const st = (parsed && parsed.__meta && parsed.state) ? parsed.state : parsed;
-      const migrated = migrateState(st);
-      setState(migrated);
-      return migrated;
+      return migrateState(st);
     } catch (e) { return null; }
   }
 
@@ -446,7 +448,7 @@ const Engine = (() => {
 
   // 旧 API 别名（任务要求保留 saveGame/loadGame 兼容）
   function saveGame() { return saveToSlot(1); }
-  function loadGame() { return loadFromSlot(1); }
+  function loadGame() { const r = loadFromSlot(1); if (r) setState(r); return r; }
 
   // 时间戳格式化：'YYYY-MM-DD HH:mm:ss'（zh 格式，补零）
   function fmtSavedAt(ms) {

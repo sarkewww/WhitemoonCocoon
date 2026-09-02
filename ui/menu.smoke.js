@@ -135,28 +135,39 @@ ok('emptySlotHtml contains 空', emptySlotHtml.indexOf('空') >= 0);
 
 // ---- 9) collectDailies / buildDailyHtml ----
 global.DayCycle.eventCount = () => 2;
-// Mock Quests
+// Mock Quests.getAll（已含 type:'daily' 与状态）
 global.Quests = {
   getAll: (S, ch) => ({
     dailies: [
-      { id:'coop_yuki', name:'陪苏雪', loc:'钱潮中学', phase:'day', ap:1, reward:'羁绊+5', locId:'school' },
+      { id:'coop_yuki', name:'陪雾岛雪', loc:'钱潮中学', phase:'day', ap:1, reward:'羁绊+5', locId:'school', limit:3 },
       { id:'rest', name:'休息', loc:'家', ap:0, reward:'恢复HP', type:'rest' },
     ]
   })
 };
+// 同时暴露 QuestConfig.dailies 用于验证去重后仍为 2 项（不重复）
+global.QuestConfig = { dailies: [
+  { id:'coop_yuki', name:'陪雾岛雪', loc:'钱潮中学', target:1 },
+  { id:'rest', name:'休息', loc:'家', target:1 },
+] };
 const items = MenuUI.collectDailies(state, 1);
-eq('collectDailies count', items.length, 2);
-eq('collectDailies[0].name', items[0].name, '陪苏雪');
+eq('collectDailies count (deduped)', items.length, 2);
+eq('collectDailies[0].name', items[0].name, '陪雾岛雪');
 eq('collectDailies[0].ap', items[0].ap, 1);
 eq('collectDailies[0].locId', items[0].locId, 'school');
+// limit 字段：未达限（limit=3, cnt=2）→ 正常，已达限（limit=1 → 今日已完成）
+eq('collectDailies[0].limit', items[0].limit, 3);
+eq('collectDailies[1].limit', items[1].limit, 1);
 const dh = MenuUI.buildDailyHtml(state, 1);
-ok('dailyHtml contains 陪苏雪', dh.indexOf('陪苏雪') >= 0);
+ok('dailyHtml contains 陪雾岛雪', dh.indexOf('陪雾岛雪') >= 0);
 ok('dailyHtml contains 行动点', dh.indexOf('行动点') >= 0);
-ok('dailyHtml contains 今日已做 2 次', dh.indexOf('今日已做 2 次') >= 0);
+ok('dailyHtml contains 今日已做 2 次 (cnt<limit)', dh.indexOf('今日已做 2 次') >= 0);
+ok('dailyHtml contains 今日已完成 (cnt>=limit)', dh.indexOf('今日已完成') >= 0);
+ok('dailyHtml contains disabled button', dh.indexOf('disabled') >= 0);
 ok('dailyHtml contains 去 钱潮中学', dh.indexOf('去 钱潮中学') >= 0);
 ok('dailyHtml contains data-daily', dh.indexOf('data-daily') >= 0);
 // Cleanup mocks
 delete global.Quests;
+delete global.QuestConfig;
 delete global.DayCycle.eventCount;
 
 // ---- 10) hasAnySave ----

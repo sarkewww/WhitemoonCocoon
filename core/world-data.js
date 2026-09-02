@@ -21,7 +21,7 @@ window.WorldData = {
     1: [
       {
         id: 'station', name: '车站前', type: 'plaza', district: 'station_area',
-        desc: '夜见车站前的广场。白天人潮往来，入夜后空无一人，路灯把影子拉得很长，墙上偶尔能看到巨大的爪痕。',
+        desc: '杭州车站前的广场。白天人潮往来，入夜后空无一人，路灯把影子拉得很长，墙上偶尔能看到巨大的爪痕。',
         x: 300, y: 80,
         conns: ['school', 'apt', 'shopping', 'old_building'],
         events: [
@@ -63,12 +63,12 @@ window.WorldData = {
           {
             id: 'act_coop_yuki', scene: 'd1_snow_roof', when: 'day', once: false, limit: 1,
             cond: (S) => Engine.flag('d1_snow_done'),
-            desc: '【每日活动】白天陪苏雪去天台。她递来保温盒，笑着说「我就知道你会来」——陪她的时间，让羁绊悄然加深。（信任+）',
+            desc: '【每日活动】白天陪雾岛雪去天台。她递来保温盒，笑着说「我就知道你会来」——陪她的时间，让羁绊悄然加深。（信任+）',
           },
           {
             id: 'act_coop_hagoromo', scene: 'd1_hagoromo_library', when: 'day', once: false, limit: 1,
             cond: (S) => Engine.flag('d1_hagoromo_done'),
-            desc: '【每日活动】白天去故纸斋找苏羽衣。她合上旧档案，陪你梳理茧的线索——并肩的时光让信赖更牢固。（信任+）',
+            desc: '【每日活动】白天去故纸斋找水无月羽衣。她合上旧档案，陪你梳理茧的线索——并肩的时光让信赖更牢固。（信任+）',
           },
           {
             id: 'act_relax_moon', when: 'night', once: false, limit: 1,
@@ -123,7 +123,7 @@ window.WorldData = {
       },
       {
         id: 'old_building', name: '空蝉旧舍', type: 'ruin', district: 'old_town',
-        desc: '钱潮中学的空蝉旧舍，异界入口所在。腐朽的楼梯、黑洞洞的窗，月光像泼翻的牛奶铺在顶楼天台。被茧选中的人，都在这里留下过痕迹。',
+        desc: '钱潮中学的空蝉旧舍，潮下界入口所在。腐朽的楼梯、黑洞洞的窗，月光像泼翻的牛奶铺在顶楼天台。被茧选中的人，都在这里留下过痕迹。',
         x: 380, y: 320,
         conns: ['station', 'construction'],
         events: [
@@ -141,7 +141,7 @@ window.WorldData = {
           {
             id: 'act_coop_suzu', scene: 'd1_suzu_patrol', when: 'night', once: false, limit: 1,
             cond: (S) => Engine.flag('d1_suzu_done'),
-            desc: '【每日活动】夜晚和许铃一起在空蝉旧舍附近巡逻。她转着银色的短杖，走在前面——和她的默契，比任何武器都可靠。（信任+）',
+            desc: '【每日活动】夜晚和星野铃一起在空蝉旧舍附近巡逻。她转着银色的短杖，走在前面——和她的默契，比任何武器都可靠。（信任+）',
           },
         ],
       },
@@ -177,7 +177,7 @@ window.WorldData = {
     2: [
       {
         id: 'station', name: '车站前', type: 'plaza', district: 'station_area',
-        desc: '夜见车站前的广场。一个月过去，车站比往常更冷清。末班车驶离后，站台上的阴影里偶尔掠过细长的、不属于人类的影子。',
+        desc: '杭州车站前的广场。一个月过去，车站比往常更冷清。末班车驶离后，站台上的阴影里偶尔掠过细长的、不属于人类的影子。',
         x: 300, y: 80,
         conns: ['school', 'snow_apt', 'church', 'old_building', 'abandoned_apt'],
         events: [

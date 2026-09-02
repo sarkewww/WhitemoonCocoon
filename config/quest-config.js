@@ -21,7 +21,7 @@ const QuestConfig = {
       // 主线
       {
         id: 'ml1', type: 'mainline', name: '主线·第一幕',
-        desc: '在夜见市探索，推进主线以解锁更多区域与剧情。',
+        desc: '在杭州探索，推进主线以解锁更多区域与剧情。',
         progress: { steps: ['chapter1_4', 'chapter1_8', 'chapter1_12'] },
       },
       // 支线
@@ -32,8 +32,8 @@ const QuestConfig = {
         complete: { flag: 'd1_snow_done' },
       },
       {
-        id: 'd1_suzu', type: 'side', name: '旧校舍的巡逻',
-        desc: '和铃一起的夜间巡逻，旧校舍的影子里有怨念潜伏。',
+        id: 'd1_suzu', type: 'side', name: '空蝉旧舍的巡逻',
+        desc: '和铃一起的夜间巡逻，空蝉旧舍的影子里有怨念潜伏。',
         loc: 'old_building', when: 'night',
         complete: { flag: 'd1_suzu_done' },
       },
@@ -45,7 +45,7 @@ const QuestConfig = {
       },
       {
         id: 'm1_girl', type: 'side', name: '地雷系少女消失事件',
-        desc: '旧校舍方向飘来被雨水泡过的、腐烂的茧的气味。',
+        desc: '空蝉旧舍方向飘来被雨水泡过的、腐烂的茧的气味。',
         loc: 'old_building', when: 'night',
         complete: { flag: 'm1_girl_trigger' },
       },
@@ -53,7 +53,7 @@ const QuestConfig = {
     2: [
       {
         id: 'ml2', type: 'mainline', name: '主线·第二幕',
-        desc: '蚀之茧的谜团逐渐浮现，深入探索夜见市的黑暗面。',
+        desc: '蚀之茧的谜团逐渐浮现，深入探索杭州的黑暗面。',
         progress: { steps: ['chapter2_4', 'chapter2_8', 'ch2_gate_1'] },
       },
       {
@@ -70,7 +70,7 @@ const QuestConfig = {
       },
       {
         id: 'd2_hagoromo', type: 'side', name: '天城教授的研究',
-        desc: '旧校舍资料室里，羽衣翻着一份非公开档案。',
+        desc: '空蝉旧舍资料室里，羽衣翻着一份非公开档案。',
         loc: 'old_building', when: 'night',
         complete: { flag: 'd2_hagoromo_done' },
       },
@@ -78,18 +78,18 @@ const QuestConfig = {
     3: [
       {
         id: 'ml3', type: 'mainline', name: '主线·终幕',
-        desc: '踏入异界，面对源茧的真相。',
+        desc: '踏入潮下界，面对源茧的真相。',
         progress: { steps: ['chapter3_5', 'chapter3_7', 'chapter3_9'] },
       },
       {
-        id: 'd3_dream', type: 'side', name: '异界边缘的休憩',
+        id: 'd3_dream', type: 'side', name: '潮下界边缘的休憩',
         desc: '羽衣难得在你身边坐下来。',
         loc: 'abyss_verge', when: 'night',
         complete: { flag: 'd3_dream_done' },
       },
       {
         id: 'ch3_side1', type: 'side', name: '羽衣的痕迹',
-        desc: '异界边缘找到羽衣留下的痕迹。',
+        desc: '潮下界边缘找到羽衣留下的痕迹。',
         loc: 'abyss_verge', when: 'day',
         complete: { flag: 'hagoromo_joined' },
       },
@@ -100,8 +100,8 @@ const QuestConfig = {
         complete: { flag: 'ch3_side2_done' },
       },
       {
-        id: 'd3_suzu', type: 'side', name: '不动之海的记忆',
-        desc: '循着低语来到不动之海，海底封存着铃的记忆。',
+        id: 'd3_suzu', type: 'side', name: '镜湖的记忆',
+        desc: '循着低语来到镜湖，湖底封存着铃的记忆。',
         loc: 'memory_sea', when: 'night',
         complete: { flag: 'd3_suzu_done' },
       },
@@ -139,7 +139,7 @@ const QuestConfig = {
     {
       id: 'act_relax_moon', name: '月下休憩',
       desc: '在月光下独处，整理思绪。',
-      loc: 'apt', when: 'night', target: 1,
+      loc: 'school', when: 'night', target: 1,
     },
   ],
 
@@ -158,10 +158,10 @@ const QuestConfig = {
     ],
     2: [
       {
-        id: 'dl2_cocoon', chapter: 2,
+        id: 'dl2_burst', chapter: 2,
         name: '铃的茧',
         desc: '铃的侵蚀已经深入骨髓，她的茧正在成形。',
-        bossId: 'guard1', loc: 'abandoned_apt',
+        bossId: 'saya_burst', loc: 'abandoned_apt',
         dueDays: 10, failScene: 'fail_cocoon',
       },
     ],
@@ -169,8 +169,8 @@ const QuestConfig = {
       {
         id: 'dl3_source', chapter: 3,
         name: '源茧孵化',
-        desc: '源茧即将完成孵化，整个夜见市将化为茧的巢穴。',
-        bossId: 'source_defense', loc: 'abyss_core',
+        desc: '源茧即将完成孵化，整个杭州将化为茧的巢穴。',
+        bossId: 'source_cocoon', loc: 'abyss_core',
         dueDays: 12, failScene: 'fail_source',
       },
     ],

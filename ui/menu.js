@@ -136,7 +136,7 @@ window.MenuUI = (() => {
     ];
     bootLogo.textContent = logo.join('\n');
 
-    const by = '> 夜见市 · 星历 2026';
+    const by = '> 杭州 · 星历 2026';
     for (let i=0; i<=by.length; i++) {
       bootText.textContent = by.substring(0, i);
       await wait(50);
@@ -218,7 +218,7 @@ window.MenuUI = (() => {
       '黑暗魔法少女 · 文字冒险RPG',
       '',
       '主角：白月绫音（白月凌）',
-      '世界观：夜见市 · 现代都市 · 超能力 · 校园',
+      '世界观：杭州 · 现代都市 · 超自然 · 校园',
       '',
       '触手魔物从人类负面情感中诞生。',
       '与「茧」签订契约，成为魔法少女——',
@@ -702,12 +702,46 @@ window.MenuUI = (() => {
     return s;
   }
 
+  // ---- 活动事件查找（用于每日活动面板触发）----
+  // 在 World/WorldData 中按活动 id 查找对应的事件。
+  // 返回 { locId, evIdx, ev } 或 null。
+  function findEventByActivityId(id) {
+    if (!id) return null;
+    const S = (typeof Engine !== 'undefined' && Engine.getState) ? Engine.getState() : null;
+    const chapter = (S && typeof S.chapter === 'number') ? S.chapter : 0;
+    if (typeof World === 'undefined' || typeof World.getMap !== 'function') return null;
+    const map = World.getMap(chapter);
+    if (!Array.isArray(map)) return null;
+    for (const loc of map) {
+      if (!Array.isArray(loc.events)) continue;
+      const idx = loc.events.findIndex(e => e && e.id === id);
+      if (idx >= 0) return { locId: loc.id, evIdx: idx, ev: loc.events[idx] };
+    }
+    return null;
+  }
+
+  // 外部触发每日活动（由 showDailyPanel 点击或 H.goToActivity hook 调用）
+  function goToActivity(id) {
+    if (!id) { showToast('活动不可用', 'warn'); return false; }
+    const found = findEventByActivityId(id);
+    if (!found) { showToast('该活动暂不可用', 'warn'); return false; }
+    if (typeof Game !== 'undefined' && typeof Game.fireAt === 'function') {
+      const ok = Game.fireAt(found.locId, found.evIdx);
+      if (!ok) showToast('现在无法进行该活动', 'warn');
+      return ok;
+    }
+    showToast('活动系统尚未接入', 'warn');
+    return false;
+  }
+
   function collectDailies(S, chapter) {
     const list = [];
     const push = (src) => {
       if (!Array.isArray(src)) return;
       for (const e of src) {
         if (!e || typeof e !== 'object') continue;
+        // 查找活动对应的事件数据，用于获取 limit
+        const eventData = findEventByActivityId(e.id || e.key);
         list.push({
           id: e.id || e.key || '',
           name: e.name || e.title || '',
@@ -717,17 +751,18 @@ window.MenuUI = (() => {
           reward: e.reward || e.rewards || e.desc || '',
           type: e.type || '',
           locId: e.locId || e.locid || '',
+          limit: (typeof e.limit === 'number') ? e.limit
+            : (eventData && typeof eventData.ev.limit === 'number') ? eventData.ev.limit
+            : (typeof e.target === 'number' ? e.target : 1),
         });
       }
     };
+    // 只从 Quests.getAll 取（已含 type:'daily' 与状态），避免与 QuestConfig.dailies 重复
     if (typeof window !== 'undefined' && window.Quests && typeof window.Quests.getAll === 'function') {
       try {
         const data = window.Quests.getAll(S, chapter);
         if (data && Array.isArray(data.dailies)) push(data.dailies);
       } catch (e) {}
-    }
-    if (typeof window !== 'undefined' && window.QuestConfig && Array.isArray(window.QuestConfig.dailies)) {
-      push(window.QuestConfig.dailies);
     }
     return list;
   }
@@ -744,10 +779,13 @@ window.MenuUI = (() => {
     } else {
       for (const it of items) {
         const cnt = dailyCount(S, it.id);
+        const limit = (typeof it.limit === 'number' && it.limit >= 0) ? it.limit : 1;
+        const done = cnt >= limit;
         html += '<div class="row">' +
-          '<button class="save-btn daily-go" data-daily="' + esc(it.id) + '" data-locid="' + esc(it.locId || '') + '" style="width:auto;padding:2px 8px;">' + esc(it.name) + '</button>' +
+          '<button class="save-btn daily-go" data-daily="' + esc(it.id) + '" data-locid="' + esc(it.locId || '') + '"' +
+          (done ? ' disabled' : '') + ' style="width:auto;padding:2px 8px;">' + esc(it.name) + '</button>' +
           '<span class="k">' + esc(fmtDailyLoc(it)) + '</span>' +
-          '<span class="v">AP ' + it.ap + (cnt > 0 ? ' · 今日已做 ' + cnt + ' 次' : '') + '</span>' +
+          '<span class="v">AP ' + it.ap + (done ? ' · 今日已完成' : (cnt > 0 ? ' · 今日已做 ' + cnt + ' 次' : '')) + '</span>' +
           (it.reward ? '<span class="v gray" style="font-size:10px;">' + esc(it.reward) + '</span>' : '') +
           '</div>';
       }
@@ -763,19 +801,12 @@ window.MenuUI = (() => {
     m.box.querySelectorAll('.daily-go').forEach(b => {
       b.addEventListener('click', () => {
         const id = b.dataset.daily;
-        const locId = b.dataset.locid;
         m.close();
         if (H.goToActivity) {
           try { H.goToActivity(id); } catch (e) { showToast('活动触发失败', 'warn'); }
           return;
         }
-        if (typeof Game !== 'undefined') {
-          if (locId && typeof Game.moveTo === 'function') Game.moveTo(locId);
-          else if (typeof Game.fireAt === 'function') Game.fireAt(locId || id);
-          else showToast('该活动暂不可用', 'warn');
-        } else {
-          showToast('活动系统尚未接入', 'warn');
-        }
+        goToActivity(id);
       });
     });
   }
@@ -1059,6 +1090,7 @@ window.MenuUI = (() => {
     showDailyPanel, showSlotsPanel,
     fmtSavedAt, slotLabel, chapterName, fmtSlotMeta, hasAnySave, listSavesSafe, renderSlotList,
     dailyCount, fmtDailyLoc, collectDailies, buildDailyHtml,
+    goToActivity, findEventByActivityId,
   };
 })();
 
