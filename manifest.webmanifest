@@ -4,6 +4,7 @@
   "description": "黑暗魔法少女文字冒险RPG：触手魔物、强制转变、茧之契约。",
   "lang": "zh-CN",
   "start_url": "./index.html",
+  "id": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

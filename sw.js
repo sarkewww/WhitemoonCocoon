@@ -32,7 +32,9 @@ const ASSETS = [
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(ASSETS.map((url) => cache.add(url).catch(() => null)))
+    ).then(() => self.skipWaiting())
   );
 });
 
@@ -55,7 +57,10 @@ self.addEventListener('fetch', (e) => {
 
   if (isStatic) {
     e.respondWith(
-      fetch(e.request).then((res) => {
+      Promise.race([
+        fetch(e.request),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+      ]).then((res) => {
         if (res && res.status === 200 && res.type === 'basic') {
           const clone = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone)).catch(() => {});

@@ -186,8 +186,50 @@ global.Engine.hasAuto = () => false;
 eq('hasAnySave fallback noAuto', MenuUI.hasAnySave(), false);
 delete global.Engine.hasAuto;
 
-// ---- 汇总 ----
-console.log(seen.join('\n'));
-const failed = seen.filter(s => s.indexOf('FAIL') === 0).length;
-console.log('\n' + (failed ? ('FAILED ' + failed) : ('ALL PASS (' + seen.length + ' checks)')));
-process.exit(failed ? 1 : 0);
+// ---- 11) showAbout / loadGame 移动端：点击 + keydown + 提示文案含"点击" ----
+// 回归：bindReturnToTitle 的 click 监听必须延迟一帧挂载——否则"打开本页的那次点击"
+// 仍在冒泡到 bootEl 时会立即触发返回（移动端点「关于」瞬间弹回标题）。
+(async function() {
+  // 确保 Engine 可用且有 hasAnySave（showTitle 依赖）
+  if (!global.Engine) global.Engine = {};
+  global.Engine.hasAnySave = () => false;
+  // 为 loadGame 准备
+  global.Engine.hasAuto = () => false;
+  global.Engine.loadAuto = () => false;
+
+  function mkEl() {
+    return {
+      style:{}, innerHTML:'',
+      addEventListener:function(t,f){this._listeners=this._listeners||{};(this._listeners[t]=this._listeners[t]||[]).push(f)},
+      removeEventListener:function(t,f){if(this._listeners&&this._listeners[t])this._listeners[t]=this._listeners[t].filter(x=>x!==f)},
+      click:function(){if(this._listeners&&this._listeners.click)this._listeners.click.forEach(f=>f({type:'click'}))}
+    };
+  }
+  const tick = () => new Promise(r => setTimeout(r, 5));
+  const bootEl = mkEl(), bootHint = mkEl(), bootText = mkEl();
+  MenuUI.init({ dom: { bootEl, bootHint, bootText }, hooks: { runScene: () => {} } });
+
+  // ---- showAbout ----
+  MenuUI.showAbout();
+  ok('showAbout text contains 点击', bootHint.innerHTML.indexOf('点击') >= 0);
+  ok('showAbout 不同步挂载 click（防同事件冒泡弹回）', !(bootEl._listeners && bootEl._listeners.click && bootEl._listeners.click.length));
+  await tick();
+  ok('showAbout 下一帧注册 bootEl click', !!(bootEl._listeners && bootEl._listeners.click && bootEl._listeners.click.length === 1));
+  bootEl.click();
+  ok('showAbout click returns to title (shows 新的游戏)', bootHint.innerHTML.indexOf('新的游戏') >= 0);
+
+  // ---- loadGame 无存档分支 ----
+  MenuUI.loadGame();
+  ok('loadGame no-save text contains 点击', bootHint.innerHTML.indexOf('点击') >= 0);
+  ok('loadGame no-save 不同步挂载 click', !(bootEl._listeners && bootEl._listeners.click && bootEl._listeners.click.length));
+  await tick();
+  ok('loadGame no-save 下一帧注册 bootEl click', !!(bootEl._listeners && bootEl._listeners.click && bootEl._listeners.click.length === 1));
+  bootEl.click();
+  ok('loadGame no-save click returns to title (shows 新的游戏)', bootHint.innerHTML.indexOf('新的游戏') >= 0);
+
+  // ---- 汇总 ----
+  console.log(seen.join('\n'));
+  const failed = seen.filter(s => s.indexOf('FAIL') === 0).length;
+  console.log('\n' + (failed ? ('FAILED ' + failed) : ('ALL PASS (' + seen.length + ' checks)')));
+  process.exit(failed ? 1 : 0);
+})();

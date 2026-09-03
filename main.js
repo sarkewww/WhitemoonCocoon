@@ -109,13 +109,38 @@ const App = (() => {
       if (dist < threshold && Date.now() - _tap.t < maxMs) cb(e);
     };
     const onCancel = () => { _tap.active = false; };
-    document.addEventListener('pointerdown', onDown);
-    document.addEventListener('pointerup', onUp);
-    document.addEventListener('pointercancel', onCancel);
+    // 老浏览器（iOS<13 / 旧 WebView）无 PointerEvent 时退化到 TouchEvent。
+    // 坐标取自 changedTouches[0]；不 preventDefault（{ passive:true }），让原生滚动工作。
+    const onTouchDown = (e) => {
+      if (within && e.target && !within.contains(e.target)) return;
+      if (e.target && e.target.closest && e.target.closest('button, input, a, textarea, select, .choice-btn, .map-node, .map-btn, .save-btn, .hud-btn, .panel-close, .title-btn, .end-btn')) return;
+      const t = e.changedTouches[0];
+      _tap = { active:true, pid:-2, x:t.clientX, y:t.clientY, t:Date.now() };
+    };
+    const onTouchUp = (e) => {
+      if (!_tap.active) return;
+      _tap.active = false;
+      const t = e.changedTouches[0];
+      const dist = Math.abs(t.clientX - _tap.x) + Math.abs(t.clientY - _tap.y);
+      if (dist < threshold && Date.now() - _tap.t < maxMs) cb(e);
+    };
+    const onTouchCancel = () => { _tap.active = false; };
+    if (window.PointerEvent) {
+      document.addEventListener('pointerdown', onDown);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onCancel);
+    } else {
+      document.addEventListener('touchstart', onTouchDown, { passive: true });
+      document.addEventListener('touchend', onTouchUp, { passive: true });
+      document.addEventListener('touchcancel', onTouchCancel, { passive: true });
+    }
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointercancel', onCancel);
+      document.removeEventListener('touchstart', onTouchDown);
+      document.removeEventListener('touchend', onTouchUp);
+      document.removeEventListener('touchcancel', onTouchCancel);
     };
   }
 

@@ -37,6 +37,17 @@ window.MenuUI = (() => {
   const RANK_NAMES = { 1: 'R1', 2: 'R2', 3: 'R3', 4: 'R4' };
   const CHAR_NAMES = { yuki: '雪', suzu: '铃', hagoromo: '羽衣' };
 
+  // 移动端防连点：350ms 内同一操作只执行一次
+  let _actionLock = 0;
+  function withLock(fn) {
+    return function(...args) {
+      const now = Date.now();
+      if (now - _actionLock < 350) return;
+      _actionLock = now;
+      return fn.apply(this, args);
+    };
+  }
+
   // ===== 基础工具 =====
   function $(id) {
     return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById(id) : null;
@@ -211,6 +222,23 @@ window.MenuUI = (() => {
     bootHint.addEventListener('click', onClick);
   }
 
+  // 返回标题：同时响应 keydown Enter 与 bootEl 点击（移动端适配），点击后回到标题。
+  // 注意：click 监听必须延迟一个 tick 挂载——否则"打开本页的那一次点击"仍在冒泡，
+  // 会在同一事件里触发返回，导致移动端点「关于」/「无存档」瞬间弹回标题（打开即关闭）。
+  function bindReturnToTitle(onBack) {
+    let disposed = false;
+    const handler = (e) => {
+      if (e.type === 'keydown' && e.key !== 'Enter') return;
+      disposed = true;
+      document.removeEventListener('keydown', handler);
+      bootEl.removeEventListener('click', handler);
+      bootHint.innerHTML = '';
+      onBack();
+    };
+    document.addEventListener('keydown', handler);
+    setTimeout(() => { if (!disposed) bootEl.addEventListener('click', handler); }, 0);
+  }
+
   async function showAbout() {
     bootHint.style.animation = 'none';
     bootHint.innerHTML = [
@@ -228,12 +256,9 @@ window.MenuUI = (() => {
       '警告：本游戏包含暴力、恐怖、身体改造、',
       '强制转变等成人内容。',
       '',
-      '按 Enter 返回',
+      '按 Enter 或 点击 返回',
     ].join('<br>');
-    const handler = (e) => {
-      if (e.key === 'Enter') { document.removeEventListener('keydown', handler); showTitle(); }
-    };
-    document.addEventListener('keydown', handler);
+    bindReturnToTitle(() => showTitle());
   }
 
   // ===== 新游戏 / 读档 =====
@@ -279,11 +304,8 @@ window.MenuUI = (() => {
         runScene(Engine.getState().scene);
       }
     } else {
-      bootHint.innerHTML = '没有存档。<br>按 Enter 返回。';
-      const handler = (e) => {
-        if (e.key==='Enter') { document.removeEventListener('keydown', handler); showTitle(); }
-      };
-      document.addEventListener('keydown', handler);
+      bootHint.innerHTML = '没有存档。<br>点击 或 按 Enter 返回';
+      bindReturnToTitle(() => showTitle());
     }
   }
 
@@ -446,7 +468,7 @@ window.MenuUI = (() => {
       });
     });
     target.querySelectorAll('[data-stat]').forEach(b => {
-      b.addEventListener('click', () => {
+      b.addEventListener('click', withLock(() => {
         const stat = b.dataset.stat;
         if (stat === 'weapon') {
           const r = Engine.upgradeWeapon();
@@ -460,7 +482,7 @@ window.MenuUI = (() => {
             showDialog('属性点不足');
           }
         }
-      });
+      }));
     });
     target.querySelectorAll('[data-sys]').forEach(b => {
       b.addEventListener('click', () => {

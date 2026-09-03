@@ -33,7 +33,7 @@ body {
 button { touch-action: manipulation; }
 .hidden { display:none !important; }
 ::selection { background:var(--accent); color:#000; }
-.story-text, .boot, .end, .battle-log, .choices, .panel-body, .status, .hud { user-select:none; -webkit-user-select:none; }
+.story-text, .boot, .end, .battle-log, .choices, .panel-body, .status, .hud, .map-node { user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
 input, textarea { user-select:text; -webkit-user-select:text; }
 
 /* ---- 启动画面 ---- */
@@ -63,7 +63,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   padding:6px 14px; border-bottom:1px solid var(--border);
   background:var(--bg2); color:var(--fg-dim); font-size:13px; flex:0 0 auto;
   user-select:none;
-  padding-top:calc(6px + env(safe-area-inset-top));
+  padding-top:calc(6px + env(safe-area-inset-top, 0px));
 }
 .hud-name { color:var(--accent-hi); font-weight:bold; letter-spacing:.1em; }
 .hud-sub { margin-left:8px; color:var(--fg-dim); }
@@ -117,7 +117,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .story-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
 .story-scroll::-webkit-scrollbar-thumb:hover { background:var(--border-hi); }
 /* 选项出现时，让文本上移一点，避免被选项覆盖；选项点击后移除恢复 */
-.story-scroll.has-choices { padding-bottom:max(92px, calc(92px + env(safe-area-inset-bottom))); }
+.story-scroll.has-choices { padding-bottom:max(92px, calc(92px + env(safe-area-inset-bottom, 0px))); }
 .story-text { max-width:720px; white-space:pre-wrap; word-wrap:break-word; }
 .story-text .line { margin-bottom:.25em; }
 .story-text .beat { margin-top:.9em; }
@@ -143,7 +143,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .story-text .r18g { border:1px solid var(--blood); background:rgba(143,47,63,.08); color:var(--red-hi); padding:10px 14px; margin:1em 0; }
 
 /* 选项 */
-.choices { flex:0 0 auto; padding:10px 22px max(16px, calc(16px + env(safe-area-inset-bottom))); border-top:1px solid var(--border); }
+.choices { flex:0 0 auto; padding:10px 22px max(16px, calc(16px + env(safe-area-inset-bottom, 0px))); border-top:1px solid var(--border); }
 .choice-btn {
   display:block; width:100%; max-width:720px; text-align:left;
   background:var(--panel); color:var(--fg); border:1px solid var(--border);
@@ -273,7 +273,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 /* ---- 结局 ---- */
 .end { position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center; background:var(--bg); overflow-y:auto; }
 .end-inner { text-align:center; max-width:640px; padding:20px; margin:auto; }
-.end-art { color:var(--accent); font-size:9px; line-height:1.12; margin-bottom:24px; }
+.end-art { color:var(--accent); font-size:10px; line-height:1.12; margin-bottom:24px; }
 .end-title { color:var(--accent-hi); font-size:26px; letter-spacing:.4em; font-weight:bold; margin-bottom:10px; text-shadow:0 0 20px rgba(143,143,255,.5); }
 .end-sub { color:var(--fg-dim); margin-bottom:24px; }
 .end-stats { color:var(--fg-dim); font-size:13px; margin-bottom:28px; }
@@ -341,11 +341,11 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 }
 @media (max-width:640px) {
   body { font-size:12px; line-height:1.5; }
-  .hud { padding:4px 8px; font-size:11px; flex-wrap:wrap; padding-top:calc(4px + env(safe-area-inset-top)); }
+  .hud { padding:4px 8px; font-size:11px; flex-wrap:wrap; padding-top:calc(4px + env(safe-area-inset-top, 0px)); }
   .hud-sub, .hud-chapter { display:none; }
   .hud-name { font-size:12px; }
   .hud-time { font-size:11px; }
-  .hud-btn { min-width:40px; min-height:40px; font-size:18px; padding:0; }
+  .hud-btn { min-width:44px; min-height:44px; font-size:18px; padding:0; }
   .story-scroll { padding:8px 10px; min-height:0; }
   .story-scroll::-webkit-scrollbar { width:5px; }
   .story-text { max-width:100%; }
@@ -354,7 +354,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   .battle-log { height:92px; font-size:12px; padding:6px 10px; flex:1 1 70px; max-height:110px; }
   .battle-menu { gap:5px; padding:5px 8px 8px; grid-template-columns:repeat(2,1fr); }
   .action-btn { font-size:11px; padding:9px 5px; min-height:44px; }
-  .action-btn .at { font-size:9px; }
+  .action-btn .at { font-size:10px; }
   .enemy-hpbar, .player-hpbar { width:90px; height:7px; }
   .arena { min-height:0; }
   .enemy-sprite, .player-sprite { font-size:10px; }
@@ -362,24 +362,25 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   .player-sprite { transform:scale(.7); transform-origin:center; }
   .hp-label { font-size:10px; }
   .enemy-name { font-size:10px; }
-  .enemy-title { font-size:9px; }
+  .enemy-title { font-size:10px; }
   .player-name-b { font-size:10px; }
-  .battle-bars { padding:4px 8px; gap:8px; padding-bottom:calc(4px + env(safe-area-inset-bottom)); }
+  .battle-bars { padding:4px 8px; gap:8px; padding-bottom:calc(4px + env(safe-area-inset-bottom, 0px)); }
   .bar-row { font-size:10px; }
   .bar-row .bar { height:8px; }
   .bar-num { width:40px; font-size:10px; }
-  .inputbar { padding:6px 8px; padding-bottom:calc(6px + env(safe-area-inset-bottom)); display:none; }
+  .inputbar { padding:6px 8px; padding-bottom:calc(6px + env(safe-area-inset-bottom, 0px)); display:none; }
   .inputbar input { font-size:13px; }
   .dialog-box { max-width:92%; padding:14px 16px; font-size:12px; max-height:70vh; overflow-y:auto; }
-  .panel { width:min(340px,92vw); padding-bottom:env(safe-area-inset-bottom); }
+  .panel { width:min(340px,92vw); padding-bottom:env(safe-area-inset-bottom, 0px); }
   .panel-body .save-btn { min-height:44px; padding:10px 8px; }
   .shop-buy, .shop-sell, .shop-equip, .shop-unequip { min-height:44px; }
-  .panel-close { min-width:40px; min-height:40px; }
+  .panel-close { min-width:44px; min-height:44px; }
   .end-title { font-size:20px; }
   .end-art { transform:scale(.7); transform-origin:center; }
   .end-sub { font-size:12px; }
   .end-stats { font-size:11px; }
   .end-btn { font-size:12px; padding:10px 16px; min-height:44px; }
+  .end-inner { padding-bottom:max(20px, calc(20px + env(safe-area-inset-bottom, 0px))); }
   .boot-inner { max-width:95%; }
   .logo { transform:scale(.65); transform-origin:center; }
   .boot-text { font-size:12px; }
@@ -388,6 +389,8 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   .r18g { font-size:11px; padding:6px 8px; }
   .dmg-num { font-size:16px; }
   .dmg-num.crit { font-size:24px; }
+  .map-node { min-height:44px; display:flex; align-items:center; justify-content:center; }
+  .map-node.small { min-height:40px; }
 }
 @media (max-width:400px) {
   body { font-size:11px; }
@@ -396,7 +399,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   .choice-btn { font-size:11px; padding:5px 8px; }
   .battle-menu { grid-template-columns:1fr 1fr; gap:3px; }
   .battle-log { height:70px; font-size:11px; }
-  .map-foot { padding:6px 10px; justify-content:center; }
+  .map-foot { padding:6px 10px; padding-bottom:max(8px, calc(8px + env(safe-area-inset-bottom, 0px))); justify-content:center; }
   .map-actions { width:100%; justify-content:center; }
   .map-desc { flex:1 1 100%; text-align:center; }
 }
@@ -413,7 +416,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 }
 .map-title { color:var(--accent-hi); letter-spacing:.2em; font-size:14px; }
 .map-info { color:var(--fg-dim); font-size:12px; }
-.map-canvas { flex:1 1 auto; position:relative; overflow:auto; cursor:grab; }
+.map-canvas { flex:1 1 auto; position:relative; overflow:auto; overscroll-behavior:contain; cursor:grab; }
 .map-canvas.dragging { cursor:grabbing; }
 .map-canvas::-webkit-scrollbar { width:6px; height:6px; }
 .map-canvas::-webkit-scrollbar-track { background:transparent; }
@@ -501,20 +504,20 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 
 /* ===== �ֻ��������� ===== */
 @media (orientation: landscape) and (max-height: 560px) {
-  .hud { padding:3px 10px; font-size:12px; padding-top:calc(3px + env(safe-area-inset-top)); }
+  .hud { padding:3px 10px; font-size:12px; padding-top:calc(3px + env(safe-area-inset-top, 0px)); }
   .hud-sub, .hud-chapter { display:none; }
   .story-scroll { padding:8px 14px; }
   .story-text { max-width:820px; margin:0 auto; }
-  .choices { padding:6px 14px max(12px, calc(12px + env(safe-area-inset-bottom))); }
-  .choice-btn { padding:8px 12px; min-height:38px; font-size:13px; }
+  .choices { padding:6px 14px max(12px, calc(12px + env(safe-area-inset-bottom, 0px))); }
+  .choice-btn { padding:8px 12px; min-height:40px; font-size:13px; }
   .battle-log { height:80px; font-size:12px; }
   .battle-menu { padding:4px 10px 10px; }
-  .action-btn { padding:7px 6px; min-height:38px; }
+  .action-btn { padding:7px 6px; min-height:40px; }
   .enemy-sprite, .player-sprite { transform:scale(.75); transform-origin:center; }
   .arena { min-height:0; }
   .map-head { padding:6px 12px; }
   .map-foot { padding:5px 12px; }
-  .map-btn { padding:5px 10px; min-height:38px; }
+  .map-btn { padding:5px 10px; min-height:40px; }
   .panel { width:min(400px, 80vw); }
 }
 @media (orientation: landscape) and (max-height: 560px) and (min-width: 720px) {
@@ -525,7 +528,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 }
 @media (orientation: portrait) {
   /* 确保手机端 safe-area 配上 */
-  .hud { padding-top:calc(6px + env(safe-area-inset-top)); }
+  .hud { padding-top:calc(6px + env(safe-area-inset-top, 0px)); }
 }
 
 /* ===== 任务面板（quest） ===== */
@@ -584,9 +587,9 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 @media (max-width:640px) {
   .quest-row { font-size:11px; padding:4px 5px; }
   .quest-name { font-size:11px; }
-  .quest-status { font-size:9px; }
+  .quest-status { font-size:10px; }
   .quest-deadline .quest-status { font-size:10px; }
-  .save-btn[data-stat] { min-height:36px; padding:6px 8px; }
-  [data-slotop] { min-height:36px; padding:4px 8px; }
-  .daily-go { min-height:36px; }
+  .save-btn[data-stat] { min-height:40px; padding:6px 8px; }
+  [data-slotop] { min-height:40px; padding:4px 8px; }
+  .daily-go { min-height:40px; }
 }
