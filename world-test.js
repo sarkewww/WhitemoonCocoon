@@ -1183,6 +1183,179 @@ t('Game.passTime 死任务超期触发失败并回滚重试', async () => {
   if (!S3.deadlines['dlA'] || S3.deadlines['dlA'].done) throw new Error('重试后死任务应保留且未 done');
 });
 
+// ==================== 死任务胜利真实链路回归（D1+D2 修复） ====================
+// 使用真实第一章数据（core/world-data.js：construction 地点 + dl1_nest Boss 事件），
+// 走「注册死任务 → moveTo/fireAt 击败 Boss → 推进天数超期」完整链路，不手工置 done。
+// runBattle mock 同步调用 onWin 模拟胜利（默认 mockView.runBattle 只计数、不结算）。
+const winView = {
+  renderMap: () => { viewCalls.renderMap++; },
+  runStory: () => { viewCalls.runStory++; return Promise.resolve(); },
+  runBattle: (enemyId, onWin) => { viewCalls.runBattle++; if (onWin) onWin(); return Promise.resolve(); },
+  showHud: () => { viewCalls.showHud++; },
+  log: m => { viewCalls.log.push(m); },
+};
+
+// 注册 dl1_nest（startDay=0, dueDays=2 → dayCounters[1]>=2 即超期）并激活 Boss cond flag
+function setupDl1Boss() {
+  const S = resetGame(1, { phase: 'day', day: 1, ap: 5, chapter: 1, dayCounters: { 1: 0 } });
+  DayCycle.ensure(S);
+  DayCycle.registerDeadline(S, { id: 'dl1_nest', chapter: 1, dueDays: 2, bossId: 'mother1', loc: 'construction', failScene: 'fail_mother' });
+  S.flags['dl1_nest_active'] = true;
+  return S;
+}
+
+t('D1 真实链路：moveTo 触发并击败 dl1_nest Boss 后 deadlines.done=true', () => {
+  const S = setupDl1Boss();
+  Game.register(winView);
+  try {
+    Game.explore(1, 'old_building');
+    const rb0 = viewCalls.runBattle;
+    Game.moveTo('construction'); // 白天 rollEvent 唯一抽出 dl1_nest（nightcrawler 仅夜晚）
+    if (viewCalls.runBattle !== rb0 + 1) throw new Error('移动到工地应触发 Boss 战，实际 ' + (viewCalls.runBattle - rb0));
+    if (!S.deadlines['dl1_nest'] || S.deadlines['dl1_nest'].done !== true) throw new Error('胜利后应置 S.deadlines.dl1_nest.done=true');
+    if (!S.doneScenes['mother1']) throw new Error('once Boss 胜利应写 doneScenes[mother1]（enemy-only 键回退）');
+  } finally {
+    Game.register(mockView);
+  }
+});
+
+t('D1 真实链路：fireAt 击败 dl1_nest Boss 后 deadlines.done=true', () => {
+  const S = setupDl1Boss();
+  Game.register(winView);
+  try {
+    Game.explore(1, 'station');
+    const ok = Game.fireAt('construction'); // 未指定索引 → rollEvent 自动抽中 Boss
+    if (!ok) throw new Error('fireAt 应触发 Boss 战');
+    if (S.deadlines['dl1_nest'].done !== true) throw new Error('fireAt 胜利后应置 done=true');
+    if (!S.doneScenes['mother1']) throw new Error('fireAt 胜利应写 doneScenes');
+  } finally {
+    Game.register(mockView);
+  }
+});
+
+t('D1 真实链路：击败 Boss 后推进天数越过期限不再被判超期（不触发回滚）', () => {
+  const S = setupDl1Boss();
+  Game.register(winView);
+  try {
+    Game.explore(1, 'old_building');
+    Game.moveTo('construction'); // 击败 Boss
+    if (S.deadlines['dl1_nest'].done !== true) throw new Error('前置条件失败：Boss 应已被击败');
+    // 推进章天数直到越过期限（startDay=0 dueDays=2 → dayCounters[1]>=2 即超期；推到 3 确认稳定）
+    for (let i = 0; i < 8 && (S.dayCounters[1] || 0) < 3; i++) Game.passTime();
+    // 同步断言（不 await，避免与前一 async 回滚测试的微任务竞争全局状态）：
+    // checkDeadlines 不再判超期 = passTime 失败回滚的唯一触发条件已消除。
+    const chk = DayCycle.checkDeadlines(S);
+    if (chk.expired.indexOf('dl1_nest') !== -1) throw new Error('胜利后越过期限不应被判 expired（将触发回滚）');
+    if ((S.deadlineFailures || 0) !== 0) throw new Error('不应触发失败回滚，deadlineFailures=' + S.deadlineFailures);
+    if (S.day <= 1) throw new Error('天数应持续推进（未被回滚），实际 day=' + S.day);
+    if ((S.dayCounters[1] || 0) < 3) throw new Error('章内天数应已越过期限，实际 ' + S.dayCounters[1]);
+    if (S.deadlines['dl1_nest'].done !== true) throw new Error('done 应保持 true');
+  } finally {
+    Game.register(mockView);
+  }
+});
+
+t('D2 真实链路：击败 Boss 后 construction 的 rollEvent 不再抽出 dl1_nest', () => {
+  const S = setupDl1Boss();
+  Game.register(winView);
+  try {
+    Game.explore(1, 'old_building');
+    Game.moveTo('construction'); // 击败 Boss
+    if (!S.doneScenes['mother1']) throw new Error('前置条件失败：Boss 应已被击败');
+    const ev = World.rollEvent(1, 'construction', 'day', S);
+    if (ev && ev.id === 'dl1_nest') throw new Error('once Boss 事件胜利后应被 rollEvent 过滤');
+  } finally {
+    Game.register(mockView);
+  }
+});
+
+t('D2 真实链路：fireAt 对已击败 Boss 返回 false（指定索引与自动筛选两路径）', () => {
+  const S = setupDl1Boss();
+  Game.register(winView);
+  try {
+    Game.explore(1, 'old_building');
+    Game.moveTo('construction'); // 击败
+    const rb0 = viewCalls.runBattle;
+    if (Game.fireAt('construction', 1) !== false) throw new Error('指定索引 fireAt 已击败 Boss 应返回 false');
+    if (Game.fireAt('construction') !== false) throw new Error('自动筛选 fireAt 已击败 Boss 应返回 false');
+    if (viewCalls.runBattle !== rb0) throw new Error('已击败 Boss 不应再次触发战斗');
+  } finally {
+    Game.register(mockView);
+  }
+});
+
+t('D2 单元：enemy-only once 事件按 doneScenes[enemy] 被 rollEvent 过滤（无 scene 字段）', () => {
+  World.defineMap(10, [
+    { id: 'loc_boss', name: 'Boss点', conns: [],
+      events: [ { id: 'ev_boss_only', enemy: 'boss_only', when: 'any', once: true } ] },
+  ]);
+  const S = freshState();
+  const ev = World.rollEvent(10, 'loc_boss', 'day', S);
+  if (!ev || ev.id !== 'ev_boss_only') throw new Error('第一次应抽到 ev_boss_only，实际 ' + JSON.stringify(ev));
+  S.doneScenes['boss_only'] = true;
+  if (World.rollEvent(10, 'loc_boss', 'day', S) !== null) throw new Error('无 scene 的 once 事件按 enemy 键写入后也应被过滤');
+});
+
+// ==================== D4 修复：夜菜单 @map 出口 × 主线尾部 cond 门控 ====================
+// 背景：d1/d2_night_menu 被可重复夜晚战斗事件（core/world-data.js next 目标）与
+//       每日协作场景复用回跳；此前唯一出口「回去睡觉」会把重放玩家拖进章一/章二
+//       主线尾部（chapter1_10-12 / ch2_side1-3），造成主线跳过与信任/奖励重刷。
+// 修复：① ui/dialogue.js 新增 @map 选项原语（next === '@map' → 结束对话返回地图）；
+//       ② 两夜菜单新增恒可用的 @map 出口；③ 睡觉选项加 cond：
+//          仅「主线已抵达尾部入口（9a/3c onEnter 置 reach 旗标）且尚未通过尾部
+//          （chapter1_10/ch2_side1 onEnter 置 done 旗标）」时出现，首通链路不变。
+// 断言直接解析 .story 源（story-data.js 为构建产物，可能滞后，不作为依据）。
+const StoryLoader = require(path.join(dir, 'engine', 'story-loader', 'index.js'));
+const d4Ch1 = StoryLoader.parse(fs.readFileSync(path.join(storyDir, 'chapter1.story'), 'utf8'), ENEMIES);
+const d4Ch2 = StoryLoader.parse(fs.readFileSync(path.join(storyDir, 'chapter2.story'), 'utf8'), ENEMIES);
+
+const d4NightMenus = [
+  { scenes: d4Ch1, menu: 'd1_night_menu', sleepNext: 'chapter1_10', reachScene: 'chapter1_9a', reachFlag: 'c1_tail_reached', doneScene: 'chapter1_10', doneFlag: 'c1_tail_done' },
+  { scenes: d4Ch2, menu: 'd2_night_menu', sleepNext: 'ch2_side1', reachScene: 'chapter2_3c', reachFlag: 'c2_tail_reached', doneScene: 'ch2_side1', doneFlag: 'c2_tail_done' },
+];
+
+for (const m of d4NightMenus) {
+  t(`D4[${m.menu}]: 含恒可用的 @map 出口选项`, () => {
+    const sc = m.scenes[m.menu];
+    if (!sc || !Array.isArray(sc.choices)) throw new Error(`${m.menu} 缺少场景或 choices`);
+    const mapExit = sc.choices.find(c => c.next === '@map');
+    if (!mapExit) throw new Error(`${m.menu} 缺少 -> @map 出口选项`);
+    if (mapExit.condition) throw new Error(`${m.menu} 的 @map 出口应恒可用（不应带 cond）`);
+  });
+
+  t(`D4[${m.menu}]: 睡觉选项 cond 门控真值表`, () => {
+    const sleep = m.scenes[m.menu].choices.find(c => c.next === m.sleepNext);
+    if (!sleep) throw new Error(`${m.menu} 缺少 -> ${m.sleepNext} 选项`);
+    if (typeof sleep.condition !== 'function') throw new Error(`${m.menu}->${m.sleepNext} 应带 cond（防夜晚战斗重放拖入主线尾部）`);
+    // 未抵达尾部（夜晚战斗重放/首日前夜）→ 隐藏
+    if (sleep.condition({ flags: {} })) throw new Error('未抵达主线尾部时睡觉选项应隐藏');
+    // 仅置 done 旗标（尾部已通过后的每日协作回跳重放）→ 隐藏
+    if (sleep.condition({ flags: { [m.doneFlag]: true } })) throw new Error('尾部已通过时睡觉选项应隐藏（防重跑尾部）');
+    // 抵达尾部入口且未通过（首通：9a/3c → 菜单 → 睡觉）→ 可选
+    if (!sleep.condition({ flags: { [m.reachFlag]: true } })) throw new Error('首通流程（已抵达尾部未通过）睡觉选项应可选');
+  });
+
+  t(`D4[${m.menu}]: 尾部入口/尾部场景 onEnter 置位门控旗标`, () => {
+    const reach = m.scenes[m.reachScene];
+    if (!reach || typeof reach.onEnter !== 'function') throw new Error(`${m.reachScene} 应含 onEnter（置位 ${m.reachFlag}）`);
+    const S1 = { flags: {} };
+    reach.onEnter(S1);
+    if (!S1.flags[m.reachFlag]) throw new Error(`${m.reachScene}.onEnter 应置位 ${m.reachFlag}`);
+    const done = m.scenes[m.doneScene];
+    if (!done || typeof done.onEnter !== 'function') throw new Error(`${m.doneScene} 应含 onEnter（置位 ${m.doneFlag}）`);
+    const S2 = { flags: {} };
+    done.onEnter(S2);
+    if (!S2.flags[m.doneFlag]) throw new Error(`${m.doneScene}.onEnter 应置位 ${m.doneFlag}`);
+  });
+
+  t(`D4[${m.menu}]: 首通链路完整（尾部入口场景仍路由到夜菜单）`, () => {
+    const reach = m.scenes[m.reachScene];
+    const toMenu = (reach.next === m.menu) ||
+      (Array.isArray(reach.choices) && reach.choices.some(c => c.next === m.menu));
+    if (!toMenu) throw new Error(`${m.reachScene} 应有路径直达 ${m.menu}（首通流程不变）`);
+  });
+}
+
 // ---- 汇总输出（等待 async 测试完成）----
 Promise.all(asyncTests).then(() => {
   results.forEach(r => console.log(r.join(' | ')));

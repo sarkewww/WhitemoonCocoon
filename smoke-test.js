@@ -101,6 +101,7 @@ t('所有场景 next 引用有效', () => {
   let checked = 0;
   while (stack.length) {
     const id = stack.pop();
+    if (id.startsWith('@')) continue; // @map 等原语不是场景 id
     const sc = Story.get(id);
     if (!sc) throw new Error('missing scene: '+id);
     if (sc.next && !seen.has(sc.next)) { seen.add(sc.next); stack.push(sc.next); }

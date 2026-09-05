@@ -115,31 +115,65 @@ const QuestConfig = {
   },
 
   // ---- 每日活动 ----
+  // chapter 字段：该活动所属章节（1/2/3）。缺省 = 所有章节都显示（向后兼容）。
+  // 面板按 S.chapter 过滤；对应 act_* 事件定义在 core/world-data.js 各章地图上。
   dailies: [
     {
       id: 'act_coop_yuki', name: '陪雪去天台',
       desc: '和雪一起去天台，享受片刻宁静。',
-      loc: 'school', when: 'day', target: 1,
+      loc: 'school', when: 'day', target: 1, chapter: 1,
     },
     {
       id: 'act_coop_suzu', name: '陪铃巡逻',
       desc: '和铃一起在旧城区巡逻，清理魔物。',
-      loc: 'old_building', when: 'night', target: 1,
+      loc: 'old_building', when: 'night', target: 1, chapter: 1,
     },
     {
       id: 'act_coop_hagoromo', name: '陪羽衣调查',
       desc: '和羽衣一起在资料室调查茧的线索。',
-      loc: 'school', when: 'day', target: 1,
+      loc: 'school', when: 'day', target: 1, chapter: 1,
     },
     {
       id: 'act_job_shop', name: '商店打工',
       desc: '在商业街的商店帮忙，赚取一些零用钱。',
-      loc: 'shopping', when: 'day', target: 1,
+      loc: 'shopping', when: 'day', target: 1, chapter: 1,
     },
     {
       id: 'act_relax_moon', name: '月下休憩',
       desc: '在月光下独处，整理思绪。',
-      loc: 'school', when: 'night', target: 1,
+      loc: 'school', when: 'night', target: 1, chapter: 1,
+    },
+    // ---- 第二章「蚀の茧」----
+    {
+      id: 'act_coop_yuki2', name: '陪雪整理相册',
+      desc: '去初雪公寓帮雪打理房间，一起翻那本全是绫音的相册。',
+      loc: 'snow_apt', when: 'day', target: 1, chapter: 2, reward: '信任+6',
+    },
+    {
+      id: 'act_coop_suzu2', name: '陪铃写笔记',
+      desc: '夜晚在荒闸里安全屋，陪铃把怕忘记的事写进笔记本。',
+      loc: 'abandoned_apt', when: 'night', target: 1, chapter: 2, reward: '信任+6',
+    },
+    {
+      id: 'act_job_station', name: '车站便利店打工',
+      desc: '在车站前的便利店帮忙，赚取这个月的生活费。',
+      loc: 'station', when: 'day', target: 1, chapter: 2, reward: '金钱+80',
+    },
+    // ---- 第三章「真相之茧」----
+    {
+      id: 'act_coop_hagoromo3', name: '与羽衣巡视边缘',
+      desc: '和水无月羽衣并肩巡视潮下界·边缘，讲解侵蚀的纹路。',
+      loc: 'abyss_verge', when: 'day', target: 1, chapter: 3, reward: '信任+8',
+    },
+    {
+      id: 'act_coop_suzu3', name: '镜湖边的铃',
+      desc: '夜晚和星野铃并肩坐在镜湖边，听她复述找回的名字。',
+      loc: 'memory_sea', when: 'night', target: 1, chapter: 3, reward: '信任+8',
+    },
+    {
+      id: 'act_job_archive', name: '整理记忆碎片',
+      desc: '在回廊档案整理脱落的记忆碎片，情感晶体可换钱。',
+      loc: 'truth_archive', when: 'day', target: 1, chapter: 3, reward: '金钱+120',
     },
   ],
 

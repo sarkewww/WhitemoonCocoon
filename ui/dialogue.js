@@ -248,10 +248,31 @@ window.DialogueUI = (() => {
     });
   }
 
+  // ===== 返回地图（@map 原语）=====
+  // 选项目标 next === '@map'（或场景 next: @map）：结束对话，回到当前章节地图。
+  // 与 CHAPTER_MAP_ENTRY 自动入图一致，把 S.scene 记为 '@map:<chapter>'，
+  // 读档时由 MenuUI.continueFromSavedScene 直接恢复地图视图。
+  function exitToMap() {
+    const S = Engine.getState();
+    if (typeof S.chapter === 'number' && S.chapter > 0) S.scene = '@map:' + S.chapter;
+    choiceLock = false;
+    if (D.choicesEl) D.choicesEl.innerHTML = '';
+    if (D.storyScroll) D.storyScroll.classList.remove('has-choices');
+    Engine.autoSave();
+    if (typeof Game !== 'undefined' && Game.returnToMap) {
+      Game.returnToMap();
+    } else {
+      // 兜底：Game 未就绪时手动切回地图视图
+      D.storyEl.classList.add('hidden');
+      if (D.mapEl) D.mapEl.classList.remove('hidden');
+    }
+  }
+
   // ===== 场景执行 =====
   async function runScene(id) {
     if (choiceLock) return;
     if (typeof id === 'string' && id.indexOf('@map:') === 0) return;
+    if (id === '@map') { exitToMap(); return; }
     const S = Engine.getState();
     const scene = Story.get(id);
     if (!scene) { console.error('场景不存在:', id); return; }
@@ -386,6 +407,8 @@ window.DialogueUI = (() => {
             Game.returnToMap && Game.returnToMap();
             return;
           }
+          // @map 原语：选项目标恰为 '@map' 时结束对话、返回当前章节地图（鼠标与键盘共用此路径）
+          if (ch.next === '@map') { exitToMap(); return; }
           if (ch.next) runScene(ch.next);
         });
         D.choicesEl.appendChild(btn);
@@ -443,7 +466,7 @@ window.DialogueUI = (() => {
 
   return {
     init, runScene, parseMarkup, wait, waitForClick, typeLine, waitInterruptible,
-    showDialog, hideDialog, scheduleEnding, showEnding, setTypeSpeed,
+    showDialog, hideDialog, scheduleEnding, showEnding, setTypeSpeed, exitToMap,
     get choiceLock() { return choiceLock; },
     set choiceLock(v) { choiceLock = v; },
     get currentSceneId() { return currentSceneId; },

@@ -149,13 +149,19 @@ console.log('== 7. getDeadlineStates：remain 计算 + 防御 ==');
   S.dayCounters[1] = 20;
   const list2 = Quests.getDeadlineStates(S);
   assert(list2[0].remain === 0 && list2[0].done === true, '超期 remain=0 done=true');
-  // 其他死任务未在 S.deadlines 中登记（未激活）=> 不列出
+  // config∩登记 语义：列出项必须同时在 config.deadlines 与 S.deadlines 中
   S.dayCounters[1] = 5;
   delete S.deadlines.dl1_nest;   // 从激活表移除
+  // a) 登记了但 config 中不存在（dl2_cocoon 无此 id）=> 无展示元数据，不列出
   S.deadlines.dl2_cocoon = { chapter: 2, startDay: 0, dueDays: 10, done: false };
   const list3 = Quests.getDeadlineStates(S);
-  assert(list3.length === 1 && list3[0].id === 'dl2_cocoon', '仅在激活表中登记的死任务被列出（dl2_cocoon）');
+  assert(list3.length === 0, '登记但不在 config（dl2_cocoon）=> 不列出');
   delete S.deadlines.dl2_cocoon;
+  // b) 在 config 且登记（dl2_burst）=> 列出
+  S.deadlines.dl2_burst = { chapter: 2, startDay: 0, dueDays: 10, done: false };
+  const list3b = Quests.getDeadlineStates(S);
+  assert(list3b.length === 1 && list3b[0].id === 'dl2_burst', '在 config 且登记（dl2_burst）=> 列出');
+  delete S.deadlines.dl2_burst;
   const list4 = Quests.getDeadlineStates(S);
   assert(list4.length === 0, '无任何登记 => 空列表');
 }

@@ -118,17 +118,23 @@ window.QuestUI = (() => {
     return html;
   }
 
-  // 死任务区 HTML：红色倒计时
+  // 死任务区 HTML：三态——已完成（变暗）/ 已失败 / 倒计时（≤2 天闪红）
   function renderDeadlinesHtml(deadlines) {
     let html = '<div class="quest-sec-title">── 死任务 ──</div>';
     if (!deadlines.length) html += '<div class="quest-row quest-dim">当前没有迫在眉睫的威胁。</div>';
+    // Quests 汇总的 dl.done 把「胜利」与「超期」折叠为同一值（done||remain<=0），
+    // 三态区分需读 S.deadlines[id].done 原始胜利标记；无 Engine 时按 remain 启发式回退。
+    const S = (typeof Engine !== 'undefined' && Engine.getState) ? Engine.getState() : null;
     for (const dl of deadlines) {
-      // ≤2 天闪红
-      const urgent = dl.remain <= 2 && !dl.done;
-      const cls = 'quest-deadline' + (urgent ? ' qd-urgent' : '') + (dl.done ? ' qd-done' : '');
-      const remainTxt = dl.done
-        ? '已失败'
-        : '⚠ 距' + esc(dl.name) + '还有 ' + dl.remain + ' 天';
+      const rec = S && S.deadlines && S.deadlines[dl.id];
+      const won = rec ? rec.done === true : (dl.done === true && dl.remain > 0);
+      const failed = !won && dl.remain <= 0;
+      // ≤2 天闪红（仅倒计时态）
+      const urgent = dl.remain <= 2 && !won && !failed;
+      const cls = 'quest-deadline' + (urgent ? ' qd-urgent' : '') + (won ? ' qd-done' : '') + (failed ? ' qd-failed' : '');
+      const remainTxt = won
+        ? '已完成'
+        : (failed ? '已失败' : '⚠ 距' + esc(dl.name) + '还有 ' + dl.remain + ' 天');
       html += '<div class="quest-row ' + cls + '">' +
         '<span class="quest-name">' + esc(dl.name) + '</span>' +
         '<span class="quest-status">' + esc(remainTxt) + '</span>' +

@@ -116,7 +116,6 @@ window.WorldData = {
             commands: [
               { type: 'effect', fn: (S) => { if (typeof Engine !== 'undefined' && Engine.addMoney) Engine.addMoney(50); } },
             ],
-            rewards: { money: 50 },
             desc: '【每日活动】白天在灯河街的商店打工。整理货架、招呼客人，傍晚店长塞给你几张钞票——辛苦没有白费。（金钱+50）',
           },
         ],
@@ -190,6 +189,13 @@ window.WorldData = {
             next: 'd2_night_menu', when: 'night', once: false, weight: 3,
             desc: '深夜独自巡逻经过车站，夜行之影从售票机的黑暗里蜕出。',
           },
+          {
+            id: 'act_job_station', when: 'day', once: false, limit: 1,
+            commands: [
+              { type: 'effect', fn: (S) => { if (typeof Engine !== 'undefined' && Engine.addMoney) Engine.addMoney(80); } },
+            ],
+            desc: '【每日活动】白天在车站前的便利店打工。补货、收银、清扫站台边的落叶——店长多塞给你几张钞票，末班车的风铃响了一下午。（金钱+80）',
+          },
         ],
       },
       {
@@ -222,6 +228,14 @@ window.WorldData = {
             id: 'ev2_snow_obsess', scene: 'd2_snow_obsess', when: 'night', once: true,
             cond: (S) => !Engine.flag('d2_snow_done'),
             desc: '按响雪家的门铃。相册里的照片一张一张滑过去——「你只要一直做绫音就好。」',
+          },
+          {
+            id: 'act_coop_yuki2', when: 'day', once: false, limit: 1,
+            cond: (S) => Engine.flag('d2_snow_done'),
+            commands: [
+              { type: 'effect', fn: (S) => { if (typeof Engine !== 'undefined' && Engine.addTrust) Engine.addTrust('yuki', 6); } },
+            ],
+            desc: '【每日活动】白天来初雪公寓帮雾岛雪打理房间、给窗台的月季浇水。她翻着相册念每一张的拍摄日期——被你记住的感觉，让她安心。（信任+6）',
           },
         ],
       },
@@ -274,6 +288,14 @@ window.WorldData = {
             id: 'ev2_suzu_worsen', scene: 'd2_suzu_worsen', when: 'night', once: true,
             cond: (S) => !Engine.flag('d2_suzu_done'),
             desc: '安全屋里，铃坐在月光下，一遍一遍写着「雨宫雫」——「我连自己叫什么都快记不得了。」',
+          },
+          {
+            id: 'act_coop_suzu2', when: 'night', once: false, limit: 1,
+            cond: (S) => Engine.flag('d2_suzu_done'),
+            commands: [
+              { type: 'effect', fn: (S) => { if (typeof Engine !== 'undefined' && Engine.addTrust) Engine.addTrust('suzu', 6); } },
+            ],
+            desc: '【每日活动】夜晚回到荒闸里安全屋，陪星野铃把怕忘记的事一件一件写进笔记本。她念给你听，念完笑了——「这些我也没忘。」（信任+6）',
           },
           {
             id: 'ev2_apt_day', enemy: 'patrol_eye', when: 'day', once: false, weight: 2,
@@ -338,6 +360,14 @@ window.WorldData = {
             id: 'ev3_verge_night', enemy: 'patrol_eye', when: 'night', once: false, weight: 2,
             desc: '潮下界·边缘也不平静——一只有些陌生的观测之眼从倒悬的茧群里飘出来，盯着你。',
           },
+          {
+            id: 'act_coop_hagoromo3', when: 'day', once: false, limit: 1,
+            cond: (S) => Engine.flag('hagoromo_joined'),
+            commands: [
+              { type: 'effect', fn: (S) => { if (typeof Engine !== 'undefined' && Engine.addTrust) Engine.addTrust('hagoromo', 8); } },
+            ],
+            desc: '【每日活动】白天和水无月羽衣并肩巡视潮下界·边缘。她指着倒悬的茧群逐一讲解侵蚀的纹路——把后背交给彼此的日子，让信赖沉得更深。（信任+8）',
+          },
         ],
       },
       {
@@ -377,6 +407,14 @@ window.WorldData = {
           {
             id: 'ev3_sea_night', enemy: 'night_crawler', when: 'night', once: false, weight: 3,
             desc: '入夜后，镜湖真的「动」了——夜行之影从湖的褶皱里爬上岸，拖着一身湿漉漉的影子。',
+          },
+          {
+            id: 'act_coop_suzu3', when: 'night', once: false, limit: 1,
+            cond: (S) => Engine.flag('d3_suzu_done'),
+            commands: [
+              { type: 'effect', fn: (S) => { if (typeof Engine !== 'undefined' && Engine.addTrust) Engine.addTrust('suzu', 8); } },
+            ],
+            desc: '【每日活动】夜晚和星野铃并肩坐在镜湖边。湖面倒映着她找回的记忆，她轻声复述自己的名字——「雨宫雫。还有，我叫铃。」（信任+8）',
           },
         ],
       },
@@ -418,6 +456,13 @@ window.WorldData = {
             id: 'ev3_archive_night', enemy: 'source_defense', when: 'night', once: false, weight: 2,
             rewards: { materials: { memory_shard: 1 } },
             desc: '回廊档案尽头的茧壁突然蠕动起来——源茧的防御机制被惊动了，触手从记忆的缝隙里探出。',
+          },
+          {
+            id: 'act_job_archive', when: 'day', once: false, limit: 1,
+            commands: [
+              { type: 'effect', fn: (S) => { if (typeof Engine !== 'undefined' && Engine.addMoney) Engine.addMoney(120); } },
+            ],
+            desc: '【每日活动】白天在回廊档案整理脱落的记忆碎片。凝结成晶体的情感残片带回现实，黑市出价意外地高——真相很贵，碎片也是。（金钱+120）',
           },
         ],
       },

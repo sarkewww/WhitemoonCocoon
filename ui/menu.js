@@ -762,6 +762,9 @@ window.MenuUI = (() => {
       if (!Array.isArray(src)) return;
       for (const e of src) {
         if (!e || typeof e !== 'object') continue;
+        // 章节过滤：带 chapter 字段的条目只在对应章节显示；
+        // 无 chapter 字段的条目全章节显示（向后兼容旧配置）。
+        if (typeof e.chapter === 'number' && typeof chapter === 'number' && e.chapter !== chapter) continue;
         // 查找活动对应的事件数据，用于获取 limit
         const eventData = findEventByActivityId(e.id || e.key);
         list.push({

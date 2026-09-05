@@ -52,14 +52,14 @@ for (const [id, scene] of Object.entries(scenes)) {
   }
   if (scene.choices) {
     for (const ch of scene.choices) {
-      if (ch.next && !allIds.has(ch.next) && !/^ending_|end_roll|chapter\d_death/.test(ch.next)) {
+      if (ch.next && !allIds.has(ch.next) && !ch.next.startsWith('@') && !/^ending_|end_roll|chapter\d_death/.test(ch.next)) {
         warnings.push(`${id} -> 未知选项目标: ${ch.next}`);
       }
     }
   }
   if (scene.battle) {
-    if (scene.battle.next && !allIds.has(scene.battle.next)) warnings.push(`${id} 战斗胜利-> 未知: ${scene.battle.next}`);
-    if (scene.battle.loseScene && !allIds.has(scene.battle.loseScene)) warnings.push(`${id} 战斗失败-> 未知: ${scene.battle.loseScene}`);
+    if (scene.battle.next && !allIds.has(scene.battle.next) && !scene.battle.next.startsWith('@')) warnings.push(`${id} 战斗胜利-> 未知: ${scene.battle.next}`);
+    if (scene.battle.loseScene && !allIds.has(scene.battle.loseScene) && !scene.battle.loseScene.startsWith('@')) warnings.push(`${id} 战斗失败-> 未知: ${scene.battle.loseScene}`);
   }
 }
 

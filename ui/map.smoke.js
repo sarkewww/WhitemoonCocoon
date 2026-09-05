@@ -194,4 +194,41 @@ assert(dom.mapFoot.children.length === 2, 'renderMapFoot 独立调用');
 MapUI.initMapDrag();
 assert(true, 'initMapDrag 挂载不抛错');
 
+console.log('== 5. D6/D8 回归 ==');
+// D6：onCurrentLocClick 预检查须读事件自带 limit（act_* 每日活动 limit:1），
+// 而非未导出的 Game.DAILY_EVENT_LIMIT（旧 bug 恒回退 2 → 提示 "1/2"）。
+{
+  const calls = [];
+  global.World = Object.assign({}, World, {
+    rollEvent: () => ({ id: 'act_coop_yuki', once: false, limit: 1 }),
+  });
+  global.DayCycle = {
+    maxAP: () => 2, mainReady: () => true,
+    canTriggerEvent: (S, id, limit) => { calls.push([id, limit]); return { ok: false, count: 1, limit, remaining: 0 }; },
+  };
+  global.Game = { fireAt: () => true, getCurrentLoc: () => 'station', getChapter: () => 1 };
+  toasts.length = 0;
+  MapUI.onCurrentLocClick({ id: 'school' });
+  assert(calls.length === 1 && calls[0][0] === 'act_coop_yuki' && calls[0][1] === 1, 'D6: 预检查传入事件自带 limit=1');
+  assert(toasts.length === 1 && toasts[0][0].indexOf('1/1') !== -1, 'D6: 耗尽提示显示 1/1（非 1/2）');
+}
+// D8：旅行面板 "(当前)" 标记须按"地点所属区域"比较（旧 bug 拿区域 id 比地点 id 恒 false）。
+{
+  global.Game = {
+    getCurrentLoc: () => 'station', getChapter: () => 1,
+    getCurrentDistrict: () => 'station_area', travelToDistrict: () => true,
+  };
+  global.DayCycle = { maxAP: () => 2, COST: { travel: 1 } };
+  dom.mapFoot.parentNode = mkEl(); // showTravelPanel 要求 mapFoot 已挂父节点
+  document.body.children.length = 0;
+  MapUI.showTravelPanel();
+  const overlay = document.body.children[document.body.children.length - 1];
+  const html = overlay.children[0].innerHTML;
+  assert(html.indexOf('data-did="station_area"') !== -1, 'D8: 旅行面板列出车站区');
+  const segStation = html.split('data-did="station_area"')[1].split('</button>')[0];
+  assert(segStation.indexOf('（当前）') !== -1 && segStation.indexOf('disabled') !== -1, 'D8: 当前区域标记（当前）且禁用（no-op 不耗 AP）');
+  const segSchool = html.split('data-did="school_area"')[1].split('</button>')[0];
+  assert(segSchool.indexOf('（当前）') === -1 && segSchool.indexOf('disabled') === -1, 'D8: 非当前区域可正常选择');
+}
+
 console.log('\n全部通过：' + passed + ' 项断言');

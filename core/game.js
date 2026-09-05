@@ -104,6 +104,19 @@ const Game = (() => {
     if (id && typeof DayCycle !== 'undefined' && DayCycle.recordEvent) DayCycle.recordEvent(S, id);
   }
 
+  // once 事件 done 统一键：scene > enemy > id（死任务 Boss 事件无 scene，只有 enemy/id）。
+  // rollEvent 过滤（world.js）与本文件 doneScenes 读写必须用同一键，
+  // 否则 enemy-only 的 once 事件胜利后仍会被反复抽出。
+  function onceKey(ev) { return ev ? (ev.scene || ev.enemy || ev.id) : undefined; }
+
+  // 死任务 Boss 胜利结算：事件 id 命中已注册 deadline 时置 done=true，
+  // 否则胜利后 checkDeadlines 仍视其未完成，超期即触发回滚（抹掉进度）。
+  function completeDeadline(S, ev) {
+    if (!S || !ev || !ev.id) return;
+    const dl = S.deadlines && S.deadlines[ev.id];
+    if (dl && !dl.done) dl.done = true;
+  }
+
   // 从 Engine 状态同步内部 chapter（解决 story 改 S.chapter 后 Game.chapter 不同步的问题）
   function syncFromState() {
     const S = typeof Engine !== 'undefined' && Engine.getState();
@@ -242,18 +255,19 @@ const Game = (() => {
     const done = S.doneScenes || {};
     // Events 命令事件（core/events.js 解释器执行 commands 序列）
     if (ev.commands && Array.isArray(ev.commands) && typeof Events !== 'undefined' && Events.process) {
-      if (ev.once) done[ev.scene || ev.enemy || ev.id] = true;
+      if (ev.once) done[onceKey(ev)] = true;
       runCommands(ev);
       return true;
     }
     // 纯剧情事件立即标记 once；战斗事件延迟到胜利后再标记
-    if (ev.once && !ev.enemy) done[ev.scene] = true;
+    if (ev.once && !ev.enemy) done[onceKey(ev)] = true;
     if (ev.enemy) {
       phase = PHASES.BATTLE;
       view.runBattle && view.runBattle(ev.enemy, async () => {
         phase = PHASES.EXPLORE;
         grantRewards(ev);
-        if (ev.once) (S.doneScenes || {})[ev.scene || ev.enemy] = true;
+        if (ev.once) (S.doneScenes || {})[onceKey(ev)] = true;
+        completeDeadline(S, ev);
         if (ev.next) { dialogueStack.push(ev.next); runDialogue(ev.next); }
         else renderMap();
       }, async () => {
@@ -291,7 +305,7 @@ const Game = (() => {
       if (ev.when && ev.when !== 'any' && ev.when !== phaseName) return false;
       if (ev.cond && !evalCond(ev.cond, S)) { view.log && view.log('现在还不能这样做。'); return false; }
       const done = S.doneScenes || {};
-      if (ev.once && (ev.scene || ev.enemy) && done[ev.scene || ev.enemy]) return false;
+      if (ev.once && onceKey(ev) && done[onceKey(ev)]) return false;
     } else {
       // 未指定或索引无效 → 自动筛选
       ev = typeof World !== 'undefined' && World.rollEvent(chapter, locId, phaseName, S);
@@ -312,13 +326,14 @@ const Game = (() => {
       return true;
     }
     // 纯剧情事件立即标记 once；战斗事件延迟到胜利后再标记
-    if (ev.once && !ev.enemy) done[ev.scene] = true;
+    if (ev.once && !ev.enemy) done[onceKey(ev)] = true;
     if (ev.enemy) {
       phase = PHASES.BATTLE;
       view.runBattle && view.runBattle(ev.enemy, async () => {
         phase = PHASES.EXPLORE;
         grantRewards(ev);
-        if (ev.once) (S.doneScenes || {})[ev.scene || ev.enemy] = true;
+        if (ev.once) (S.doneScenes || {})[onceKey(ev)] = true;
+        completeDeadline(S, ev);
         if (ev.next) runDialogue(ev.next); else renderMap();
       }, async () => {
         phase = PHASES.EXPLORE;

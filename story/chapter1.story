@@ -1275,6 +1275,7 @@ label chapter1_9
 
 label chapter1_9a
   transition
+  onEnter: (s) => { s.flags.c1_tail_reached = true; }
   text:
     [n]第二天。[/n]
     ''
@@ -1454,7 +1455,8 @@ label d1_night_menu
     2. 陪铃夜间巡逻 -> d1_suzu_patrol [cond: !S.flags.d1_suzu_done]
     3. 去故纸斋找羽衣 -> d1_hagoromo_library [cond: !S.flags.d1_hagoromo_done]
     4. 去空蝉旧舍——班里那个消失的地雷系少女 -> m1_girl_missing [cond: !S.flags.m1_girl_trigger]
-    5. 回去睡觉 -> chapter1_10
+    5. 回去睡觉 -> chapter1_10 [cond: S.flags.c1_tail_reached && !S.flags.c1_tail_done]
+    6. 回公寓休息（返回地图） -> @map
 
 label d1_snow_roof
   transition
@@ -1755,6 +1757,7 @@ label d1_hagoromo_library
     2. 「……你一个人去，太危险了。」（退缩，避开她的目光） -> d1_night_menu [effect: (s) => { s.trust.hagoromo = (s.trust.hagoromo||0) + 3; }]
 
 label chapter1_10
+  onEnter: (s) => { s.flags.c1_tail_done = true; }
   text:
     [title]第 一 章 · 间[/title]
     ''

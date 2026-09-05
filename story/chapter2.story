@@ -580,6 +580,7 @@ label chapter2_3b
 
 label chapter2_3c
   transition
+  onEnter: (s) => { s.flags.c2_tail_reached = true; }
   text:
     [n]那一晚，绫音失眠了。[/n]
     ''
@@ -841,7 +842,8 @@ label d2_night_menu
     2. 去找铃，她今天的状态不太对 -> d2_suzu_worsen [cond: !S.flags.d2_suzu_done]
     3. 去资料室，那里也许有关于茧的线索 -> d2_prof_research [cond: !S.flags.d2_hagoromo_done]
     4. 今晚……不想一个人待着 -> m2_self_harm [cond: !S.flags.m2_od_trigger]
-    5. 还是回去睡觉吧…… -> ch2_side1
+    5. 还是回去睡觉吧…… -> ch2_side1 [cond: S.flags.c2_tail_reached && !S.flags.c2_tail_done]
+    6. 回公寓休息（返回地图） -> @map
 
 label d2_snow_obsess
   transition
@@ -1049,6 +1051,7 @@ label d2_prof_research
 
 label ch2_side1
   transition
+  onEnter: (s) => { s.flags.c2_tail_done = true; }
   text:
     [n]三天后。[/n]
     [n]绫音在雪的房间醒来。[/n]

@@ -1,9 +1,10 @@
 /* 白月茧响 - Service Worker（离线缓存） */
-const CACHE_NAME = 'wmc-v4';
+const CACHE_NAME = 'wmc-v5';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
+  './content/game-content.js',
   './engine.js',
   './enemies.js',
   './story.js',

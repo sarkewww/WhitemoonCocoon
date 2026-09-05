@@ -211,7 +211,8 @@ window.MapUI = (() => {
     if (ev) {
       // 每日限量检查：先于 AP 消耗给出提示
       if (!ev.once && typeof DayCycle !== 'undefined' && DayCycle.canTriggerEvent) {
-        const limit = typeof Game !== 'undefined' && Game.DAILY_EVENT_LIMIT ? Game.DAILY_EVENT_LIMIT : 2;
+        // 读事件自带 limit（与 game.js eventLimitOK 权威逻辑一致），缺省 2
+        const limit = (typeof ev.limit === 'number' && ev.limit >= 0) ? ev.limit : 2;
         const st = DayCycle.canTriggerEvent(S, ev.id || ev.scene || ev.enemy, limit);
         if (!st.ok) {
           H.showToast('今天的行动已耗尽（' + st.count + '/' + st.limit + '）', 'warn');
@@ -375,6 +376,14 @@ window.MapUI = (() => {
     const S = (typeof Engine !== 'undefined' && Engine.getState) ? Engine.getState() : null;
     const chapter = (typeof Game !== 'undefined' && Game.getChapter) ? Game.getChapter() : null;
     const curLoc = Game.getCurrentLoc();
+    // 当前地点所属区域 id（区域列表项是 district 对象，须用区域 id 比较，不能拿地点 id）
+    let curDistrict = null;
+    if (typeof Game.getCurrentDistrict === 'function') {
+      curDistrict = Game.getCurrentDistrict() || null;
+    } else if (typeof World !== 'undefined' && World.getLocation) {
+      const curLocObj = World.getLocation(chapter, curLoc);
+      curDistrict = (curLocObj && curLocObj.district) || null;
+    }
 
     // 区域列表（World.getDistricts 由后续 A3 任务提供，未就绪则兜底取全地图）
     let districts = [];
@@ -406,7 +415,10 @@ window.MapUI = (() => {
       html += '<div style="color:var(--fg-dim);padding:8px 0;">没有可到达的区域。</div>';
     }
     for (const d of districts) {
-      const here = d && d.id === curLoc;
+      // d 为区域对象（getDistricts）→ 与 curDistrict 比较；
+      // d 为地点对象（getMap 兜底，含 district 字段）→ 与 curLoc 比较。
+      // here 为 true 时按钮 disabled，点击即 no-op，不消耗 AP。
+      const here = !!d && ('district' in d ? d.id === curLoc : d.id === curDistrict);
       const disabled = here || !apOK;
       html += '<button class="map-btn travel-district" data-did="' + H.esc(d.id) + '"' +
         (disabled ? ' disabled' : '') +

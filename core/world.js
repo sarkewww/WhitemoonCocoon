@@ -96,7 +96,8 @@ const World = (() => {
     const done = S.doneScenes || {};
     const pool = loc.events.filter(ev => {
       if (ev.when && ev.when !== 'any' && ev.when !== phase) return false;
-      if (ev.once && done[ev.scene]) return false;
+      // once 过滤键与 game.js onceKey 一致：scene > enemy > id（死任务 Boss 事件无 scene）
+      if (ev.once && done[ev.scene || ev.enemy || ev.id]) return false;
       if (ev.cond && !evalCond(ev.cond, S)) return false;
       return true;
     });
