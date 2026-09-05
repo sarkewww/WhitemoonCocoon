@@ -227,6 +227,16 @@ delete global.Engine.hasAuto;
   bootEl.click();
   ok('loadGame no-save click returns to title (shows 新的游戏)', bootHint.innerHTML.indexOf('新的游戏') >= 0);
 
+  // ---- withLock 按操作分键（回归：全局共享锁曾把不同操作也屏蔽） ----
+  let hitStr = 0, hitVit = 0;
+  const strFn = MenuUI.withLock('str', () => { hitStr++; });
+  const vitFn = MenuUI.withLock('vit', () => { hitVit++; });
+  strFn(); eq('withLock 首击执行', hitStr, 1);
+  strFn(); eq('withLock 同键 350ms 内连点被屏蔽', hitStr, 1);
+  vitFn(); eq('withLock 不同键不被 str 锁误伤', hitVit, 1);
+  await new Promise(r => setTimeout(r, 360));
+  strFn(); eq('withLock 350ms 后同键再次执行', hitStr, 2);
+
   // ---- 汇总 ----
   console.log(seen.join('\n'));
   const failed = seen.filter(s => s.indexOf('FAIL') === 0).length;

@@ -389,7 +389,7 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   .r18g { font-size:11px; padding:6px 8px; }
   .dmg-num { font-size:16px; }
   .dmg-num.crit { font-size:24px; }
-  .map-node { min-height:44px; display:flex; align-items:center; justify-content:center; }
+  .map-node { min-height:44px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
   .map-node.small { min-height:40px; }
 }
 @media (max-width:400px) {

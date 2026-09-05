@@ -37,13 +37,13 @@ window.MenuUI = (() => {
   const RANK_NAMES = { 1: 'R1', 2: 'R2', 3: 'R3', 4: 'R4' };
   const CHAR_NAMES = { yuki: '雪', suzu: '铃', hagoromo: '羽衣' };
 
-  // 移动端防连点：350ms 内同一操作只执行一次
-  let _actionLock = 0;
-  function withLock(fn) {
+  // 移动端防连点：350ms 内同一操作只执行一次（按操作分键，不同操作互不屏蔽）
+  const _actionLocks = {};
+  function withLock(key, fn) {
     return function(...args) {
       const now = Date.now();
-      if (now - _actionLock < 350) return;
-      _actionLock = now;
+      if (now - (_actionLocks[key] || 0) < 350) return;
+      _actionLocks[key] = now;
       return fn.apply(this, args);
     };
   }
@@ -468,7 +468,7 @@ window.MenuUI = (() => {
       });
     });
     target.querySelectorAll('[data-stat]').forEach(b => {
-      b.addEventListener('click', withLock(() => {
+      b.addEventListener('click', withLock(b.dataset.stat, () => {
         const stat = b.dataset.stat;
         if (stat === 'weapon') {
           const r = Engine.upgradeWeapon();
@@ -1106,7 +1106,7 @@ window.MenuUI = (() => {
     // 通用 UI 反馈
     showToast, flashAPBadge, guardFreePhase,
     // 纯逻辑 / 数据渲染辅助（引擎与测试复用）
-    freePhaseGate, fmtConfidantBonus, renderConfidantHtml, buildStatusHtml,
+    freePhaseGate, fmtConfidantBonus, renderConfidantHtml, buildStatusHtml, withLock,
     dataRecipe, dataMaterial, maxAPOf, esc,
     // 每日活动面板 + 存档槽位（新增）
     showDailyPanel, showSlotsPanel,
